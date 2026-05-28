@@ -1,0 +1,6 @@
+@FogoSat.Operations.API_HostAddress = http://localhost:5215
+
+GET {{FogoSat.Operations.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

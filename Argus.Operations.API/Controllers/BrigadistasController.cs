@@ -1,3 +1,4 @@
+using Argus.Operations.API.Auth;
 using Argus.Operations.Domain.Entities;
 using Argus.Operations.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
@@ -41,6 +42,7 @@ public class BrigadistasController : ControllerBase
 
     // POST /api/brigadistas → cria um brigadista novo
     [HttpPost]
+    [Authorize(Roles = Roles.AdminECoordenador)]
     public async Task<ActionResult<Brigadista>> Create(Brigadista brigadista)
     {
         _context.Brigadistas.Add(brigadista);
@@ -55,6 +57,7 @@ public class BrigadistasController : ControllerBase
 
     // PUT /api/brigadistas/7 → atualiza um brigadista existente
     [HttpPut("{id}")]
+    [Authorize(Roles = Roles.AdminECoordenador)]
     public async Task<IActionResult> Update(long id, Brigadista brigadista)
     {
         if (id != brigadista.Id)
@@ -72,6 +75,7 @@ public class BrigadistasController : ControllerBase
 
     // DELETE /api/brigadistas/7 → remove um brigadista
     [HttpDelete("{id}")]
+    [Authorize(Roles = Roles.AdminECoordenador)]
     public async Task<IActionResult> Delete(long id)
     {
         var brigadista = await _context.Brigadistas.FindAsync(id);

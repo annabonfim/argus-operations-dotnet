@@ -1,3 +1,4 @@
+using Argus.Operations.API.Auth;
 using Argus.Operations.API.DTOs.Auth;
 using Argus.Operations.Application.Auth;
 using Argus.Operations.Domain.Entities;
@@ -13,7 +14,6 @@ namespace Argus.Operations.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[AllowAnonymous]
 public class AuthController : ControllerBase
 {
     private readonly ArgusDbContext _context;
@@ -38,6 +38,7 @@ public class AuthController : ControllerBase
 
     // POST /api/auth/login → autentica e devolve JWT
     [HttpPost("login")]
+    [AllowAnonymous]
     public async Task<ActionResult<AuthResponse>> Login(LoginRequest request)
     {
         var usuario = await _context.Usuarios.FirstOrDefaultAsync(u => u.Email == request.Email);
@@ -56,6 +57,7 @@ public class AuthController : ControllerBase
 
     // POST /api/auth/register → cria novo Brigadista (exige código de convite)
     [HttpPost("register")]
+    [AllowAnonymous]
     public async Task<ActionResult<AuthResponse>> Register(RegisterRequest request)
     {
         if (!string.Equals(request.CodigoConvite, _codigoConviteEsperado, StringComparison.Ordinal))
@@ -79,6 +81,23 @@ public class AuthController : ControllerBase
         await _context.SaveChangesAsync();
 
         return CreatedAtAction(nameof(Login), BuildResponse(usuario));
+    }
+
+    // GET /api/auth/me → devolve o usuário do token atual (útil pro mobile e pra debug de auth)
+    [HttpGet("me")]
+    [Authorize]
+    public ActionResult<object> Me()
+    {
+        return Ok(new
+        {
+            IsAuthenticated = User.Identity?.IsAuthenticated,
+            Name = User.Identity?.Name,
+            Role = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value,
+            IsInRoleAdmin = User.IsInRole(Roles.Admin),
+            IsInRoleCoordenador = User.IsInRole(Roles.Coordenador),
+            IsInRoleBrigadista = User.IsInRole(Roles.Brigadista),
+            Claims = User.Claims.Select(c => new { c.Type, c.Value })
+        });
     }
 
     private AuthResponse BuildResponse(Usuario usuario)

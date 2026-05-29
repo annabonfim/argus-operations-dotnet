@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Text;
 using Argus.Operations.Application.Auth;
 using Argus.Operations.Infrastructure.Auth;
@@ -74,6 +75,10 @@ var jwtSettings = builder.Configuration.GetSection("Jwt").Get<JwtSettings>()!;
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
+        // Desativa o mapeamento automático de claim names curtas pras URIs longas,
+        // mantendo no ClaimsPrincipal os mesmos types que estão no JWT.
+        options.MapInboundClaims = false;
+
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
@@ -83,7 +88,11 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidIssuer = jwtSettings.Issuer,
             ValidAudience = jwtSettings.Audience,
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.Key)),
-            ClockSkew = TimeSpan.FromSeconds(30)
+            ClockSkew = TimeSpan.FromSeconds(30),
+            // Diz pro ClaimsIdentity qual claim type representa role/nome — sem isso o
+            // [Authorize(Roles = "...")] não acha o claim e libera tudo pra qualquer logado.
+            RoleClaimType = ClaimTypes.Role,
+            NameClaimType = ClaimTypes.Name
         };
     });
 builder.Services.AddAuthorization();

@@ -1,3 +1,4 @@
+using Argus.Operations.API.Auth;
 using Argus.Operations.Domain.Entities;
 using Argus.Operations.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
@@ -41,6 +42,7 @@ public class OcorrenciasController : ControllerBase
 
     // POST /api/ocorrencias → cria uma ocorrência nova
     [HttpPost]
+    [Authorize(Roles = Roles.AdminECoordenador)]
     public async Task<ActionResult<Ocorrencia>> Create(Ocorrencia ocorrencia)
     {
         _context.Ocorrencias.Add(ocorrencia);
@@ -72,6 +74,7 @@ public class OcorrenciasController : ControllerBase
 
     // DELETE /api/ocorrencias/7 → remove uma ocorrência
     [HttpDelete("{id}")]
+    [Authorize(Roles = Roles.AdminECoordenador)]
     public async Task<IActionResult> Delete(long id)
     {
         var ocorrencia = await _context.Ocorrencias.FindAsync(id);

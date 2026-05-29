@@ -1,3 +1,4 @@
+using Argus.Operations.API.Auth;
 using Argus.Operations.Domain.Entities;
 using Argus.Operations.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
@@ -41,6 +42,7 @@ public class RecursosController : ControllerBase
 
     // POST /api/recursos → cria um recurso novo
     [HttpPost]
+    [Authorize(Roles = Roles.AdminECoordenador)]
     public async Task<ActionResult<Recurso>> Create(Recurso recurso)
     {
         _context.Recursos.Add(recurso);
@@ -55,6 +57,7 @@ public class RecursosController : ControllerBase
 
     // PUT /api/recursos/7 → atualiza um recurso existente
     [HttpPut("{id}")]
+    [Authorize(Roles = Roles.AdminECoordenador)]
     public async Task<IActionResult> Update(long id, Recurso recurso)
     {
         if (id != recurso.Id)
@@ -72,6 +75,7 @@ public class RecursosController : ControllerBase
 
     // DELETE /api/recursos/7 → remove um recurso
     [HttpDelete("{id}")]
+    [Authorize(Roles = Roles.AdminECoordenador)]
     public async Task<IActionResult> Delete(long id)
     {
         var recurso = await _context.Recursos.FindAsync(id);

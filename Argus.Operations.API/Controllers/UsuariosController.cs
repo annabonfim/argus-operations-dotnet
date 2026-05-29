@@ -1,3 +1,4 @@
+using Argus.Operations.API.Auth;
 using Argus.Operations.Domain.Entities;
 using Argus.Operations.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
@@ -8,7 +9,7 @@ namespace Argus.Operations.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize]
+[Authorize(Roles = Roles.Admin)]
 public class UsuariosController : ControllerBase
 {
     private readonly ArgusDbContext _context;

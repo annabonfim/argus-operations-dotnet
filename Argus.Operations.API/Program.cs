@@ -27,9 +27,12 @@ builder.Services.AddSwaggerGen(options =>
 });
 
 // ===== DbContext com Oracle =====
+// UseOracleSQLCompatibility("11") força SQL compatível com Oracle pré-23ai
+// (emite 1/0 em vez de TRUE/FALSE — evita ORA-00904 em queries com bool)
 builder.Services.AddDbContext<ArgusDbContext>(options =>
     options.UseOracle(
-        builder.Configuration.GetConnectionString("OracleDb")
+        builder.Configuration.GetConnectionString("OracleDb"),
+        oracle => oracle.UseOracleSQLCompatibility(OracleSQLCompatibility.DatabaseVersion19)
     )
 );
 

@@ -41,6 +41,18 @@ public class GlobalExceptionHandler : IExceptionHandler
 
     private static (int status, string title, string detail) MapException(Exception ex)
     {
+        // Chamadas a APIs externas via HttpClient (ex.: API Java de alertas) —
+        // 503 quando o serviço está fora, 504 quando excede o timeout configurado.
+        if (ex is HttpRequestException)
+            return (StatusCodes.Status503ServiceUnavailable,
+                "API externa indisponível",
+                "Não foi possível consultar a API externa (Java). Tente novamente em instantes.");
+
+        if (ex is TaskCanceledException)
+            return (StatusCodes.Status504GatewayTimeout,
+                "Timeout em API externa",
+                "Excedido o tempo limite ao consultar a API externa (Java).");
+
         // Erros de conexão Oracle podem vir em qualquer tipo de exception (não só
         // DbUpdateException) — checa toda a cadeia de InnerException antes de
         // tudo. 503 sinaliza "tente de novo", diferente de 500 (bug nosso).

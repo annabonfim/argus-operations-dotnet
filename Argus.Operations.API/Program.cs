@@ -2,7 +2,9 @@ using System.Security.Claims;
 using System.Text;
 using Argus.Operations.API.Exceptions;
 using Argus.Operations.Application.Auth;
+using Argus.Operations.Application.Integration;
 using Argus.Operations.Infrastructure.Auth;
+using Argus.Operations.Infrastructure.Integration;
 using Argus.Operations.Infrastructure.Data;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -23,6 +25,15 @@ builder.Services.AddProblemDetails();
 // ===== Health Checks (app + Oracle via DbContext) =====
 builder.Services.AddHealthChecks()
     .AddDbContextCheck<ArgusDbContext>(name: "oracle-db");
+
+// ===== Cliente HTTP tipado pra API Java (alertas via satélite) =====
+// URL base configurável em appsettings → JavaApi:BaseUrl (override por user-secrets ou env).
+builder.Services.AddHttpClient<IAlertaJavaClient, AlertaJavaClient>(client =>
+{
+    var baseUrl = builder.Configuration["JavaApi:BaseUrl"] ?? "http://localhost:8080";
+    client.BaseAddress = new Uri(baseUrl);
+    client.Timeout = TimeSpan.FromSeconds(10);
+});
 
 // ===== Swagger/OpenAPI com suporte a Bearer JWT =====
 builder.Services.AddEndpointsApiExplorer();

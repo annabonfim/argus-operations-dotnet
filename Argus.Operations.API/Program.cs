@@ -13,8 +13,21 @@ using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Oracle.ManagedDataAccess.Client;
+using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// ===== Logging estruturado com Serilog =====
+// Substitui o ILogger padrão (texto plano) por Serilog (JSON ou texto rico,
+// com properties tipadas tipo {RequestId}, {SourceContext} etc). Lê config
+// de Serilog:* no appsettings.json — facilita ajustar nível de log por
+// namespace sem recompilar. As injeções de ILogger<T> nos controllers
+// continuam funcionando, Serilog roteia tudo pela mesma interface.
+builder.Host.UseSerilog((context, services, configuration) => configuration
+    .ReadFrom.Configuration(context.Configuration)
+    .ReadFrom.Services(services)
+    .Enrich.FromLogContext()
+    .WriteTo.Console());
 
 // ===== Serviços =====
 builder.Services.AddControllers();
@@ -141,7 +154,13 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// ===== Tratamento global de exceções (precisa vir antes de tudo no pipeline) =====
+// Loga cada HTTP request com método, path, status e duração em uma linha
+// estruturada. Precisa vir ANTES do UseExceptionHandler pra capturar o status
+// final (503/504 traduzido pelo handler) em vez do 500 cru que o pipeline
+// emitiria se o exception bubblasse direto pra cá.
+app.UseSerilogRequestLogging();
+
+// ===== Tratamento global de exceções =====
 app.UseExceptionHandler();
 
 // Limpa qualquer pool herdado antes do primeiro acesso ao Oracle.

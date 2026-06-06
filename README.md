@@ -1,5 +1,18 @@
 # Argus Operations API
 
+<p align="center">
+  <img alt=".NET 9" src="https://img.shields.io/badge/.NET%209-512BD4?style=for-the-badge&logo=dotnet&logoColor=white">
+  <img alt="C#" src="https://img.shields.io/badge/C%23-239120?style=for-the-badge&logo=csharp&logoColor=white">
+  <img alt="ASP.NET Core" src="https://img.shields.io/badge/ASP.NET%20Core-Web%20API-512BD4?style=for-the-badge&logo=dotnet&logoColor=white">
+  <img alt="Entity Framework Core" src="https://img.shields.io/badge/EF%20Core%209-512BD4?style=for-the-badge&logo=dotnet&logoColor=white">
+  <img alt="Oracle" src="https://img.shields.io/badge/Oracle%20DB-F80000?style=for-the-badge&logo=oracle&logoColor=white">
+  <img alt="JWT" src="https://img.shields.io/badge/JWT-Bearer-000000?style=for-the-badge&logo=jsonwebtokens&logoColor=white">
+  <img alt="Swagger" src="https://img.shields.io/badge/Swagger-OpenAPI-85EA2D?style=for-the-badge&logo=swagger&logoColor=black">
+  <img alt="Serilog" src="https://img.shields.io/badge/Serilog-Structured%20Logs-1C1C1C?style=for-the-badge">
+  <img alt="xUnit" src="https://img.shields.io/badge/xUnit-26%2F26%20%E2%9C%93-5C2D91?style=for-the-badge">
+  <img alt="Azure" src="https://img.shields.io/badge/Azure-App%20Service-0078D4?style=for-the-badge&logo=microsoftazure&logoColor=white">
+</p>
+
 API operacional do sistema **Argus**, voltada a operações de combate a incêndios florestais. Concentra a gestão de brigadas, brigadistas, recursos materiais, ocorrências em campo e registros de atendimento, expondo um conjunto de endpoints REST protegidos por autenticação JWT.
 
 O projeto faz parte da Global Solution 2026/1 da FIAP, cujo tema é a economia espacial e a aplicação de dados de satélite a problemas reais na Terra. O Argus se posiciona no eixo de **monitoramento ambiental e resposta a desastres**: a API operacional aqui presente é o backend que receberia alertas de queimadas detectadas por satélite (vindos do domínio Java, externo a esta API) e coordenaria a resposta das brigadas em terra.
@@ -20,6 +33,9 @@ O projeto faz parte da Global Solution 2026/1 da FIAP, cujo tema é a economia e
 - [Testes automatizados](#testes-automatizados)
 - [Estrutura de pastas](#estrutura-de-pastas)
 - [Decisões técnicas relevantes](#decisões-técnicas-relevantes)
+- [Deploy na Azure](#deploy-na-azure)
+- [Prints e evidências](#prints-e-evidências)
+- [Integrantes](#integrantes)
 
 ## Stack
 
@@ -30,6 +46,7 @@ O projeto faz parte da Global Solution 2026/1 da FIAP, cujo tema é a economia e
 | Persistência | Entity Framework Core 9 com provider Oracle (Oracle.EntityFrameworkCore 9.x) |
 | Banco | Oracle 19c (servidor FIAP) |
 | Autenticação | JWT Bearer + BCrypt para hash de senhas |
+| Logging | Serilog (estruturado, JSON-friendly) + `UseSerilogRequestLogging` |
 | Testes | xUnit 2.9 + EF Core InMemory |
 
 ## Arquitetura
@@ -480,13 +497,15 @@ O projeto `Argus.Operations.Tests` reúne testes unitários e integração-leve 
 dotnet test
 ```
 
-Cobertura atual (15 testes verdes em torno de 1 segundo):
+Cobertura atual (26 testes verdes em torno de 1 segundo):
 
 - **`BcryptPasswordHasherTests`**: garante que `Hash` produz valores não vazios e diferentes a cada chamada (salt aleatório do BCrypt), e que `Verify` aceita a senha correta e rejeita a errada.
 - **`TokenServiceTests`**: valida o formato do JWT gerado (header.payload.signature), a presença das claims básicas (`sub`, `email`, `name`), o claim de role correspondente ao `PerfilUsuario`, e a unicidade do `jti` em chamadas consecutivas (prevenção de replay).
 - **`AuthControllerTests`**: usa `ArgusDbContext` com provider InMemory para exercitar o fluxo completo de `/api/auth/login` (credenciais válidas, senha errada, email inexistente, usuário inativo) e `/api/auth/register` (código de convite correto, código errado, email já existente).
+- **`AlertasControllerTests`**: cobre o proxy `/api/alertas` (listagem e busca por id) e o endpoint `/api/alertas/{id}/criar-ocorrencia` que promove um alerta do Java a uma ocorrência operacional — testando caminho feliz, alerta inexistente no Java (404), brigada inexistente (400 com mensagem específica), brigadista inexistente (400) e herança automática da descrição quando não fornecida.
+- **`FocosControllerTests`**: valida o proxy `/api/focos` (mapa de calor), tanto com dados quanto com resposta vazia do Java.
 
-A escolha de cobrir profundamente a camada de autenticação é deliberada: o CRUD dos demais controllers é predominantemente código que delega ao EF Core, e seu comportamento é mais bem demonstrado via Swagger ou cURL do que via testes unitários que essencialmente testariam o próprio framework.
+A camada de integração com Java usa **fakes manuais** (sem Moq) que implementam `IAlertaJavaClient` e `IFocoCalorJavaClient` — segue o padrão "sem mocks externos" já estabelecido no resto da suíte. A escolha de cobrir profundamente autenticação + integração é deliberada: o CRUD dos demais controllers é predominantemente código que delega ao EF Core, e seu comportamento é mais bem demonstrado via Swagger do que via testes que essencialmente testariam o próprio framework.
 
 ## Estrutura de pastas
 
@@ -536,3 +555,90 @@ Algumas escolhas de projeto que merecem nota:
 **Defense in depth no mobile**. Embora o app mobile aplique UI condicional (esconde botões que o usuário não pode usar), o backend não confia nisso: todo endpoint mantém seu `[Authorize(Roles = "...")]` ativo. A UI evita confusão e cliques sem efeito; o backend garante segurança real. Um aplicativo modificado ou uma chamada feita por fora ainda recebe 403 do servidor.
 
 **Código de convite no registro**. O endpoint `/api/auth/register` exige um código fixo configurado em `appsettings.json` (`Auth:CodigoConvite`). É uma simplificação do que seria um fluxo de convite real (token único por convidado, expiração, etc.), apropriada ao escopo acadêmico. Em produção, o coordenador da brigada geraria um código de convite específico para cada novo membro, com validade limitada e uso único.
+
+## Deploy na Azure
+
+A API é publicada no **Azure App Service**, que hospeda o runtime .NET 9 e expõe o Swagger publicamente. A conexão com o Oracle FIAP e o JWT secret são injetados como **Application Settings** no portal — nunca commitados no repositório (segue o padrão "User Secrets em dev, variável de ambiente em prod" cobrado pela disciplina).
+
+### Variáveis configuradas no App Service
+
+| Nome | Onde aparece no código | Propósito |
+|---|---|---|
+| `ConnectionStrings__OracleDb` | `appsettings.json` → seção `ConnectionStrings` | String de conexão com Oracle FIAP (usuário, senha, host, pool) |
+| `Jwt__Key` | `JwtSettings.Key` | Chave HMAC SHA-256 usada pra assinar e validar o JWT |
+| `Auth__CodigoConvite` | `AuthController` (registro de novo usuário) | Código fixo que o brigadista digita ao se cadastrar |
+| `JavaApi__BaseUrl` | `HttpClient` registrado no `Program.cs` | URL pública da API Java (alertas + focos) |
+
+> Observação: o duplo underscore (`__`) é a forma do ASP.NET Core ler chaves hierárquicas a partir de variáveis de ambiente — equivale ao `:` usado no `appsettings.json` (`ConnectionStrings:OracleDb`).
+
+### Passo a passo do deploy manual
+
+```bash
+# 1. Login na Azure CLI
+az login
+
+# 2. Publica o build local direto no App Service (sem container)
+az webapp up \
+  --name argus-operations \
+  --resource-group rg-argus-gs2026 \
+  --runtime "DOTNETCORE:9.0" \
+  --location eastus
+```
+
+Após o deploy, o Swagger fica disponível em `https://argus-operations.azurewebsites.net/swagger` e o health check em `https://argus-operations.azurewebsites.net/health`.
+
+### CI/CD
+
+O repositório está preparado pra pipeline contínua no Azure DevOps: o `azure-pipelines.yml` (gerado via wizard de App Service) executa `dotnet restore` → `dotnet build` → `dotnet test` → `dotnet publish` e faz o deploy automático a cada push na `main`.
+
+## Prints e evidências
+
+Galeria de evidências do projeto rodando. Os prints abaixo são gerados a partir da API publicada na Azure e do Swagger local — ficam em `docs/prints/` no repositório.
+
+### Swagger publicado
+
+![Swagger UI](docs/prints/swagger-ui.png)
+
+Lista completa de endpoints agrupados por controller, com botão **Authorize** ativo pra autenticação Bearer JWT.
+
+### Fluxo de autenticação
+
+![Login retornando JWT](docs/prints/auth-login.png)
+
+`POST /api/auth/login` devolvendo `token`, `expiraEm` e o objeto `usuario` (sem `senhaHash`).
+
+### Endpoint protegido funcionando
+
+![GET /api/brigadas autorizado](docs/prints/brigadas-list.png)
+
+`GET /api/brigadas` retornando 200 com token válido. Sem token → 401; com token de role insuficiente → 403.
+
+### Integração com a API Java
+
+![GET /api/alertas via proxy](docs/prints/alertas-proxy.png)
+
+`GET /api/alertas` proxy pra API Java (NASA FIRMS) — devolve a lista de alertas reais detectados por satélite.
+
+### Health check do Oracle
+
+![GET /health com Oracle ok](docs/prints/health-check.png)
+
+`GET /health` validando conexão ao Oracle via `AddDbContextCheck`. Resposta inclui status, duração total e duração do check específico do banco.
+
+### Testes automatizados verdes
+
+![dotnet test passando](docs/prints/dotnet-test.png)
+
+Suíte completa em xUnit rodando localmente — 26 testes cobrindo `AuthController`, `AlertasController`, `FocosController`, `PasswordHasher` e `TokenService`.
+
+## Integrantes
+
+| Nome | RM | Responsabilidade no Argus |
+|---|---|---|
+| Anna Bonfim | 561052 | .NET (esta API) + Mobile (React Native) + parte de Compliance/TOGAF |
+| _A preencher_ | _RM_ | Java Intelligence (ingestão FIRMS, IA, RAG) + PL/SQL |
+| _A preencher_ | _RM_ | DevOps & Cloud (Azure Pipelines) + Compliance/Archimate |
+
+**Turma:** TDS — FIAP
+**Projeto:** Global Solution 2026/1 — Argus
+**Data de entrega:** 09/06/2026

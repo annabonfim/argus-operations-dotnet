@@ -30,7 +30,7 @@ O projeto faz parte da Global Solution 2026/1 da FIAP, cujo tema é **economia e
 - [Autenticação e autorização](#autenticação-e-autorização)
 - [Matriz de permissões](#matriz-de-permissões)
 - [Endpoints](#endpoints)
-- [Exemplos de uso](#exemplos-de-uso)
+- [Como testar no Swagger](#como-testar-no-swagger)
 - [Tratamento global de erros](#tratamento-global-de-erros)
 - [Health check](#health-check)
 - [Integração com a API Java](#integração-com-a-api-java)
@@ -146,7 +146,7 @@ erDiagram
     }
 ```
 
-A entidade `Usuario` é independente do restante do domínio — representa quem opera o sistema (admin, coordenador ou brigadista). O `ID_ALERTA` em `OCORRENCIA` é uma referência cross-domain ao módulo Java do projeto (não está no escopo deste repositório); por isso é nullable e a FK formal não é criada via EF Core, fica como um simples campo `long?` que será amarrado por `ALTER TABLE` no script SQL consolidado da entrega de Database.
+A entidade `Usuario` é independente do restante do domínio — representa quem opera o sistema (admin, coordenador ou brigadista). O `ID_ALERTA` em `OCORRENCIA` é uma referência cross-domain ao módulo Java do projeto (não está no escopo deste repositório); por isso é nullable e a FK não é criada via EF Core. Como cada microserviço (Java e .NET) opera contra um schema Oracle FIAP **separado** — decisão tomada para evitar a competição pelo limite de `SESSIONS_PER_USER = 10` no servidor da FIAP —, essa referência é puramente lógica: o `AlertaId` carrega o identificador do alerta do lado do Java sem qualquer constraint física entre os schemas. A integração entre os dois lados acontece via HTTP (proxy) e mensageria assíncrona, não via banco.
 
 Os enums `PerfilUsuario`, `TipoRecurso` e `StatusOcorrencia` são mapeados como `int` no Oracle (via `HasConversion<int>()`), o que permite filtros e relatórios sem precisar de joins com tabelas de domínio.
 
@@ -202,7 +202,7 @@ A API usa JWT Bearer. O fluxo padrão é: o cliente faz POST em `/api/auth/login
 | `admin@argus.com` | `Admin@123` | Admin | Seed automático no startup |
 | `brig@argus.com` | `Brig@123` | Brigadista | Registrado via `POST /api/auth/register` durante o desenvolvimento |
 
-Os usuários persistem no Oracle entre restarts da API. Para resetar, basta deletar as linhas correspondentes em `USUARIO`.
+Os usuários persistem no Oracle entre restarts da API. Para resetar, basta deletar as linhas correspondentes em `USUARIO`. Para criar um novo usuário pelo `POST /api/auth/register`, veja [Como testar no Swagger](#como-testar-no-swagger) — usa o código de convite `ARGUS-2026`.
 
 ### Login pelo Swagger
 
@@ -223,7 +223,7 @@ O endpoint `GET /api/auth/me` devolve as claims do token atual e indica em quais
 
 ### Registro de novos usuários
 
-`POST /api/auth/register` exige um campo `codigoConvite`. O valor atual é `ARGUS-2026`, configurável em `appsettings.json > Auth:CodigoConvite`. A presença deste código simula um sistema fechado: na vida real um app operacional de brigada não aceita auto-cadastro público.
+`POST /api/auth/register` é público e cria sempre um **Brigadista** (para criar Coordenadores ou Admins é preciso editar o `AdminSeed` no `appsettings.json` ou inserir direto no banco). Exige um campo `codigoConvite` configurado em `Auth:CodigoConvite` — exemplo curl pronto em [Como testar no Swagger](#como-testar-no-swagger).
 
 Campos do payload:
 
@@ -238,24 +238,7 @@ Campos do payload:
 | `senha` | sim | mín 6 caracteres | É hasheada com BCrypt (workfactor 11) antes de gravar |
 | `codigoConvite` | sim | igual ao configurado | Verificação de inscrição autorizada |
 
-Os 3 campos do contato de emergência (`nomeEmergencia`, `telefoneEmergencia`, `relacaoEmergencia`) andam juntos por convenção — ou todos preenchidos, ou nenhum. São opcionais porque usuários administrativos (Admin/Coordenador de escritório) podem não precisar registrar essa informação. A validação dessa coesão fica a cargo do cliente (mobile mostra/esconde o trio como um bloco único).
-
-Exemplo de payload com contato de emergência:
-
-```json
-{
-  "nome": "Maria Silva",
-  "email": "maria.silva@argus.com",
-  "telefone": "11987654321",
-  "nomeEmergencia": "Joana Silva",
-  "telefoneEmergencia": "11988888888",
-  "relacaoEmergencia": "Mãe",
-  "senha": "Senha@123",
-  "codigoConvite": "ARGUS-2026"
-}
-```
-
-Usuários registrados via essa rota recebem sempre o perfil **Brigadista**. Para criar Coordenadores ou Admins é preciso editar o `AdminSeed` no `appsettings.json` ou inserir diretamente no banco.
+Os 3 campos do contato de emergência andam juntos por convenção (todos preenchidos ou nenhum). A validação dessa coesão fica a cargo do cliente — o mobile mostra/esconde o trio como bloco único.
 
 ## Matriz de permissões
 
@@ -305,125 +288,219 @@ Todos os controllers seguem o padrão CRUD:
 
 Onde `{recurso}` é um de: `brigadas`, `brigadistas`, `recursos`, `ocorrencias`, `registroscampo`, `usuarios`.
 
-## Exemplos de uso
+## Como testar no Swagger
 
-Todos os exemplos abaixo assumem que a variável `TOKEN` foi populada após o login. Para isso:
+A API entrega a documentação interativa em `http://localhost:5215/swagger`. Os passos abaixo cobrem o fluxo típico de avaliação — autenticar uma vez, depois exercitar cada endpoint com os payloads prontos.
 
-```bash
-TOKEN=$(curl -s -X POST http://localhost:5215/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"admin@argus.com","senha":"Admin@123"}' \
-  | jq -r '.token')
+**1. Faça login como Admin** (`POST /api/auth/login`):
+
+```json
+{ "email": "admin@argus.com", "senha": "Admin@123" }
 ```
 
-### Listar brigadas
+Copie o valor do campo `token` na resposta.
 
-```bash
-curl -s http://localhost:5215/api/brigadas \
-  -H "Authorization: Bearer $TOKEN" | jq
+**2. Clique no botão 🔒 Authorize** no topo da página, cole `Bearer <token>` (com o prefixo `Bearer ` e um espaço) e confirme. Todos os endpoints protegidos passam a enviar o header automaticamente.
+
+**3. Para testar como Brigadista** (perfil restrito), repita o login com `brig@argus.com` / `Brig@123` e troque o token no Authorize.
+
+A partir daqui é só ir nos endpoints, abrir **Try it out**, colar o JSON correspondente e clicar **Execute**. Os payloads abaixo cobrem todos os endpoints que aceitam corpo — os GETs (lista e busca por id) não precisam de payload, só rodar Execute.
+
+### `POST /api/auth/register` — auto-cadastro de Brigadista (público)
+
+`codigoConvite` precisa bater com `Auth:CodigoConvite` — atualmente **`ARGUS-2026`**. Os 3 campos de emergência são opcionais e devem andar juntos.
+
+```json
+{
+  "nome": "Brigadista de Teste",
+  "email": "teste@argus.com",
+  "telefone": "11900000000",
+  "nomeEmergencia": "Mãe do Teste",
+  "telefoneEmergencia": "11988888888",
+  "relacaoEmergencia": "Mãe",
+  "senha": "Senha@123",
+  "codigoConvite": "ARGUS-2026"
+}
 ```
 
-### Criar uma brigada (apenas Admin/Coordenador)
+Resposta: `200 OK` com `token`, `expiraEm` e `usuario` (perfil Brigadista).
 
-```bash
-curl -s -X POST http://localhost:5215/api/brigadas \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "nome": "Brigada PrevFogo Cerrado Norte",
-    "baseOperacional": "Brasília, DF",
-    "telefone": "6133331234",
-    "ativa": true
-  }' | jq
+### `PUT /api/auth/me` — usuário atualiza o próprio perfil
+
+Qualquer perfil autenticado. Nunca altera `Perfil`, `Ativo`, `Email` ou `SenhaHash`.
+
+```json
+{
+  "nome": "Brigadista Teste Atualizado",
+  "telefone": "11912345678",
+  "nomeEmergencia": "Pai do Teste",
+  "telefoneEmergencia": "11977777777",
+  "relacaoEmergencia": "Pai"
+}
 ```
 
-### Criar um brigadista
+Resposta: `204 No Content`.
 
-```bash
-curl -s -X POST http://localhost:5215/api/brigadistas \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "nome": "Maria Silva",
-    "matricula": "BRG-042",
-    "email": "maria.silva@argus.com",
-    "telefone": "11987654321",
-    "funcao": "Líder de Esquadrão",
-    "ativo": true,
-    "dataAdmissao": "2024-03-15T00:00:00",
-    "brigadaId": 1
-  }' | jq
+### `POST /api/brigadas` — criar brigada (Admin/Coordenador)
+
+```json
+{
+  "nome": "Brigada PrevFogo Cerrado Norte",
+  "baseOperacional": "Brasília, DF",
+  "telefone": "6133331234",
+  "ativa": true
+}
 ```
 
-### Abrir uma ocorrência
+### `POST /api/brigadistas` — criar brigadista (Admin/Coordenador)
 
-```bash
-curl -s -X POST http://localhost:5215/api/ocorrencias \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "descricao": "Foco de incêndio em vegetação seca, vento moderado",
-    "latitude": -15.789,
-    "longitude": -47.882,
-    "status": 1,
-    "dataAbertura": "2026-06-01T14:30:00",
-    "brigadistaId": 1,
-    "brigadaId": 1,
-    "alertaId": null
-  }' | jq
+```json
+{
+  "nome": "Maria Silva",
+  "matricula": "BRG-042",
+  "email": "maria.silva@argus.com",
+  "telefone": "11987654321",
+  "funcao": "Líder de Esquadrão",
+  "ativo": true,
+  "dataAdmissao": "2024-03-15T00:00:00",
+  "brigadaId": 1
+}
 ```
 
-### Atualizar status de ocorrência como Brigadista
+### `POST /api/recursos` — criar recurso (Admin/Coordenador)
 
-Brigadistas podem fazer PUT em ocorrências para registrar mudança de status (em atendimento → finalizada, por exemplo) mesmo sem permissão de criar ou deletar. Faça login como `brig@argus.com` / `Brig@123` e:
+`tipo` é enum int: `1` = Veiculo, `2` = Ferramenta, `3` = EPI, `4` = Comunicacao.
 
-```bash
-curl -i -X PUT http://localhost:5215/api/ocorrencias/1 \
-  -H "Authorization: Bearer $TOKEN_BRIGADISTA" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "id": 1,
-    "descricao": "Foco controlado",
-    "latitude": -15.789,
-    "longitude": -47.882,
-    "status": 3,
-    "dataAbertura": "2026-06-01T14:30:00",
-    "dataFinalizacao": "2026-06-01T17:45:00",
-    "brigadistaId": 1,
-    "brigadaId": 1
-  }'
+```json
+{
+  "nome": "Caminhão-pipa Mercedes 1620",
+  "tipo": 1,
+  "disponivel": true,
+  "brigadaId": 1
+}
+```
+
+### `POST /api/ocorrencias` — abrir ocorrência manualmente (Admin/Coordenador)
+
+`status` é enum int: `1` = Aberta, `2` = EmAtendimento, `3` = Controlada, `4` = Finalizada. `alertaId` é opcional — `null` para ocorrência sem alerta vinculado.
+
+```json
+{
+  "descricao": "Foco de incêndio em vegetação seca, vento moderado",
+  "latitude": -15.789,
+  "longitude": -47.882,
+  "status": 1,
+  "dataAbertura": "2026-06-01T14:30:00",
+  "brigadistaId": 1,
+  "brigadaId": 1,
+  "alertaId": null
+}
+```
+
+### `PUT /api/ocorrencias/{id}` — atualizar status (qualquer perfil logado)
+
+Brigadistas podem dar PUT pra registrar mudança de status (atendimento → finalizada) mesmo sem permissão de criar ou deletar. Lembre de **trocar o token pro de Brigadista** antes de tentar pra ver isso funcionar. O `id` no corpo precisa bater com o `id` da URL.
+
+```json
+{
+  "id": 1,
+  "descricao": "Foco extinto e área monitorada",
+  "latitude": -15.789,
+  "longitude": -47.882,
+  "status": 4,
+  "dataAbertura": "2026-06-01T14:30:00",
+  "dataFinalizacao": "2026-06-01T17:45:00",
+  "brigadistaId": 1,
+  "brigadaId": 1
+}
+```
+
+Resposta: `204 No Content`.
+
+### `POST /api/alertas/{id}/criar-ocorrencia` — promover alerta a ocorrência (Admin/Coordenador)
+
+Endpoint estrela do projeto: busca o alerta no Java pelo proxy, monta a descrição com `titulo` + `descricao` + `recomendacaoOperacional` do alerta e cria a ocorrência já vinculada. Se `descricao` vier `null`, o servidor monta automaticamente; se preenchida, sobrescreve. Coloque o id de um alerta real (ex.: `114`) na URL.
+
+```json
+{
+  "brigadaId": 1,
+  "brigadistaId": 1,
+  "latitude": -16.5,
+  "longitude": -56.5,
+  "descricao": null
+}
+```
+
+Resposta: `201 Created` com a `Ocorrencia` (já com `alertaId` preenchido). Erros: `404` se o alerta não existe no Java, `400` se brigada/brigadista não existe no banco. Esse mesmo fluxo é automatizado pelo [consumer RabbitMQ](#mensageria-assíncrona-rabbitmq) — o endpoint manual continua existindo como fallback para ocorrências sem alerta.
+
+### `POST /api/registroscampo` — evidência de campo
+
+Foto + GPS + observação coletados pelo brigadista durante o atendimento. Uma ocorrência aceita N registros.
+
+```json
+{
+  "observacao": "Frente do fogo controlada. Solicitando reforço para extinção total.",
+  "urlFoto": "https://storage.argus.com/registros/2026-06-01-001.jpg",
+  "latitude": -15.7891,
+  "longitude": -47.8823,
+  "dataRegistro": "2026-06-01T15:20:00",
+  "ocorrenciaId": 1
+}
+```
+
+### `POST /api/usuarios` — criar usuário (apenas Admin)
+
+Diferente do `/api/auth/register` (público e Brigadista-only), esta rota é Admin-only e permite definir o `perfil` direto. Enum: `1` = Admin, `2` = Coordenador, `3` = Brigadista.
+
+```json
+{
+  "nome": "Coordenador Regional Norte",
+  "email": "coord.norte@argus.com",
+  "telefone": "92988887777",
+  "senha": "Coord@123",
+  "perfil": 2
+}
+```
+
+### `PUT /api/{recurso}/{id}` — padrão de update em todos os CRUDs
+
+Toda entidade (`brigadas`, `brigadistas`, `recursos`, `ocorrencias`, `registroscampo`, `usuarios`) aceita PUT com **o mesmo body do POST + o `id` repetido no corpo**. O id do corpo precisa bater com o id da URL, senão retorna `400`. Resposta padrão: `204 No Content`. Exemplo para `PUT /api/brigadas/1`:
+
+```json
+{
+  "id": 1,
+  "nome": "Brigada PrevFogo Cerrado Norte (renomeada)",
+  "baseOperacional": "Brasília, DF",
+  "telefone": "6133331234",
+  "ativa": false
+}
 ```
 
 ### Cenários que demonstram a matriz de permissões
 
-Tente com o token de Brigadista:
+Pra ver a autorização por role em ação, faça login como Brigadista (`brig@argus.com` / `Brig@123`) e tente:
 
-```bash
-# Esperado: 403 Forbidden, role não autorizado
-curl -i -X DELETE http://localhost:5215/api/brigadas/1 \
-  -H "Authorization: Bearer $TOKEN_BRIGADISTA"
-```
+- **`DELETE /api/brigadas/1`** → esperado `403 Forbidden` (DELETE é Admin/Coordenador-only)
+- **`GET /api/usuarios`** → esperado `403 Forbidden` (qualquer operação em `/api/usuarios` é Admin-only)
 
-```bash
-# Esperado: 403 Forbidden, qualquer operação em /api/usuarios é Admin-only
-curl -i http://localhost:5215/api/usuarios \
-  -H "Authorization: Bearer $TOKEN_BRIGADISTA"
-```
+Volte pro token de Admin e os mesmos endpoints respondem `204` e `200` respectivamente.
 
 ## Tratamento global de erros
 
-Um `GlobalExceptionHandler` registrado via `IExceptionHandler` intercepta exceções não tratadas e devolve um `ProblemDetails` consistente. O foco principal é traduzir erros do Oracle em status HTTP semanticamente corretos, em vez de devolver 500 cru com stack trace exposta.
+Um `GlobalExceptionHandler` registrado via `IExceptionHandler` intercepta exceções não tratadas e devolve um `ProblemDetails` consistente — traduz erros de banco e de chamadas externas em status HTTP semanticamente corretos, em vez de devolver 500 cru com stack trace exposta.
 
-| Código Oracle | Cenário típico | Status HTTP | Título |
+| Origem | Cenário | Status HTTP | Título |
 |---|---|---|---|
-| ORA-00001 | Constraint UNIQUE violada (ex.: email duplicado) | 409 Conflict | Registro duplicado |
-| ORA-02291 | FK insert: ID referenciado não existe | 400 Bad Request | Referência inválida |
-| ORA-02292 | FK delete: registro tem filhos | 409 Conflict | Registro com dependências |
-| ORA-12541 / 12545 / 12170 | TNS: banco inacessível | 503 Service Unavailable | Banco indisponível |
+| Oracle `ORA-00001` | Constraint UNIQUE violada (ex.: email duplicado) | 409 Conflict | Registro duplicado |
+| Oracle `ORA-02291` | FK insert: ID referenciado não existe | 400 Bad Request | Referência inválida |
+| Oracle `ORA-02292` | FK delete: registro tem filhos | 409 Conflict | Registro com dependências |
+| Oracle `ORA-12541 / 12545 / 12170` | TNS: banco inacessível | 503 Service Unavailable | Banco indisponível |
 | Outro `DbUpdateException` | Demais erros de gravação | 500 | Erro ao salvar no banco |
+| `HttpRequestException` | Chamada à API Java falhou (Java fora do ar) | 503 Service Unavailable | API externa indisponível |
+| `TaskCanceledException` | Timeout (>10s) em chamada externa | 504 Gateway Timeout | Timeout em API externa |
 | Demais exceções | Bugs ou casos não previstos | 500 | Erro interno |
 
-Os códigos Oracle são detectados via varredura da cadeia de `InnerException`, porque erros de conexão (12541/12545) podem aparecer encapsulados em wrappers diferentes do `DbUpdateException` típico de violações de integridade.
+Os códigos Oracle são detectados via varredura da cadeia de `InnerException` — erros de conexão (12541/12545) podem aparecer encapsulados em wrappers diferentes do `DbUpdateException` típico de violações de integridade.
 
 Exemplo de resposta para um `DELETE /api/brigadas/1` quando há brigadistas vinculados à brigada:
 
@@ -461,11 +538,13 @@ Quando o Oracle está fora, `status` vira `Unhealthy`, o HTTP é 503 e o campo `
 
 ## Integração com a API Java
 
-O Argus opera com dois backends em domínios distintos: o **Java**, responsável pela detecção de focos de incêndio via satélite (geração de alertas), e o **.NET** (este projeto), responsável pelas operações de resposta em campo. A integração entre eles acontece em dois níveis.
+O Argus opera com dois backends em domínios distintos: o **Java** ([argus-intelligence-api](https://github.com/alanerochaa/argus-intelligence-api)), responsável pela detecção de focos de incêndio via satélite (geração de alertas), e o **.NET** (este projeto), responsável pelas operações de resposta em campo. A integração entre eles acontece em três níveis.
 
-**Nível 1 — banco compartilhado.** Ambos usam o mesmo Oracle do FIAP, com schemas independentes. A entidade `Ocorrencia` tem um campo `AlertaId` (nullable) que aponta pra tabela de alertas do Java. A FK formal é criada via `ALTER TABLE` no script SQL consolidado da entrega de Database.
+**Nível 1 — referência por id (cross-schema).** Cada microserviço opera contra **seu próprio schema** no Oracle FIAP (a equipe usa contas distintas — Java na conta da integrante de Intelligence, .NET nesta conta). A entidade `Ocorrencia` carrega um campo `AlertaId` (nullable) com o identificador do alerta do lado do Java, sem qualquer constraint física entre os bancos — é uma "soft foreign key" resolvida em tempo de aplicação. A motivação prática dessa separação foi evitar o limite de `SESSIONS_PER_USER = 10` do servidor FIAP, que era recorrentemente saturado quando Java + .NET + SQL Developer + IDE competiam pela mesma conta.
 
-**Nível 2 — chamada HTTP via client tipado.** Um `HttpClient` tipado (`IAlertaJavaClient` na Application, `AlertaJavaClient` na Infrastructure) faz requisições à API Java pra buscar os detalhes de um alerta específico. O endpoint `GET /api/alertas/{id}` deste projeto serve como proxy pra API Java, o que permite ao cliente mobile consultar alertas pelo mesmo backend que já está autenticando.
+**Nível 2 — chamada HTTP via client tipado.** Um `HttpClient` tipado (`IAlertaJavaClient` na Application, `AlertaJavaClient` na Infrastructure) faz requisições à API Java pra buscar os detalhes de um alerta específico. O endpoint `GET /api/alertas/{id}` deste projeto serve como proxy pra API Java, o que permite ao cliente mobile consultar alertas pelo mesmo backend que já está autenticando. O cliente também é tolerante ao envelope HATEOAS adotado pela API Java na listagem (`_embedded.alertaResponseDTOList`) sem precisar tipar todo o wrapper.
+
+**Nível 3 — mensageria assíncrona via fila AMQP.** A integração mais recente é via broker AMQP gerenciado (CloudAMQP/LavinMQ): a API Java publica alertas críticos na fila `argus.alertas` e o `AlertaConsumerService` deste projeto consome em background, criando ocorrências operacionais sem ação manual. Detalhes na seção [Mensageria assíncrona (RabbitMQ)](#mensageria-assíncrona-rabbitmq).
 
 **Configuração:** a URL base da API Java é configurável em `appsettings.json`:
 
@@ -477,14 +556,7 @@ O Argus opera com dois backends em domínios distintos: o **Java**, responsável
 
 Pode ser sobrescrita via user-secrets (`JavaApi:BaseUrl`) ou variável de ambiente (`JavaApi__BaseUrl`). O timeout default é 10 segundos.
 
-**Tratamento de erros da chamada externa.** Tanto a falha de conexão (Java fora do ar) quanto o timeout são interceptados pelo `GlobalExceptionHandler`:
-
-| Cenário | Status HTTP | Título |
-|---|---|---|
-| Java retorna 404 | 404 Not Found | (resposta normal do controller) |
-| Java retorna sucesso | 200 OK | (devolve `AlertaDto` ao cliente) |
-| `HttpRequestException` (Java fora) | 503 Service Unavailable | API externa indisponível |
-| `TaskCanceledException` (timeout >10s) | 504 Gateway Timeout | Timeout em API externa |
+**Tratamento de erros da chamada externa.** `HttpRequestException` (Java fora) vira 503 e `TaskCanceledException` (timeout >10s) vira 504, ambos via `GlobalExceptionHandler` — ver [Tratamento global de erros](#tratamento-global-de-erros) para a tabela consolidada.
 
 **Contrato real do retorno da API Java**, espelhado do `AlertaResponseDTO`:
 
@@ -597,33 +669,50 @@ A camada de integração com Java usa **fakes manuais** (sem Moq) que implementa
 ```
 argus-operations/
 ├── Argus.Operations.API/                  # Camada de apresentação (ASP.NET Core)
-│   ├── Auth/                              # Roles (constantes), filters de Swagger
-│   ├── Controllers/                       # AuthController + 6 controllers CRUD
-│   ├── DTOs/Auth/                         # LoginRequest, RegisterRequest, AuthResponse
-│   ├── Exceptions/GlobalExceptionHandler  # IExceptionHandler + mapa Oracle→HTTP
+│   ├── Auth/                              # Roles (constantes), helpers de autorização
+│   ├── Controllers/                       # AuthController, AlertasController, FocosController
+│   │                                      # + CRUDs (Brigadas, Brigadistas, Recursos,
+│   │                                      # Ocorrencias, RegistrosCampo, Usuarios)
+│   ├── DTOs/Auth/                         # LoginRequest, RegisterRequest, AuthResponse,
+│   │                                      # AtualizarPerfilRequest
+│   ├── DTOs/Ocorrencias/                  # CriarOcorrenciaDeAlertaRequest
+│   ├── DTOs/Usuarios/                     # UsuarioDtos (CRUD admin)
+│   ├── Exceptions/GlobalExceptionHandler  # IExceptionHandler + mapa Oracle/HTTP→ProblemDetails
 │   ├── Properties/launchSettings.json
-│   ├── appsettings.json                   # Jwt, Auth:CodigoConvite, UsuariosSeed
-│   └── Program.cs                         # Composição: DI, JWT, Swagger, health, pipeline
+│   ├── appsettings.json                   # Jwt, Auth:CodigoConvite, JavaApi, RabbitMq, Serilog
+│   ├── Program.cs                         # Composição: DI, JWT, Swagger, Serilog, CORS,
+│   │                                      # CloudAMQP consumer, static files, pipeline
+│   └── wwwroot/                           # Landing page institucional (index.html + css + logo)
 │
-├── Argus.Operations.Application/          # Contratos de aplicação
-│   └── Auth/                              # ITokenService, IPasswordHasher
+├── Argus.Operations.Application/          # Contratos de aplicação (sem dependências de infra)
+│   ├── Auth/                              # ITokenService, IPasswordHasher
+│   ├── Integration/                       # IAlertaJavaClient, IFocoCalorJavaClient,
+│   │                                      # AlertaDto, FocoCalorDto
+│   └── Messaging/                         # AlertaQueueDto (espelha a mensagem do RabbitMQ)
 │
 ├── Argus.Operations.Infrastructure/       # Implementações de infra
 │   ├── Auth/                              # TokenService (JWT), BcryptPasswordHasher,
-│   │                                      # JwtSettings, UsuariosSeeder
+│   │                                      # JwtSettings, AdminSeeder
 │   ├── Data/ArgusDbContext.cs             # Mapeamento EF Core ↔ Oracle
-│   └── Migrations/                        # Migrations versionadas
+│   ├── Integration/                       # AlertaJavaClient, FocoCalorJavaClient (HttpClient tipado)
+│   ├── Messaging/                         # AlertaConsumerService (BackgroundService) +
+│   │                                      # JavaLocalDateTimeConverter (compat Jackson)
+│   └── Migrations/                        # Migrations versionadas (EF Core)
 │
 ├── Argus.Operations.Domain/               # Entidades puras
 │   ├── Entities/                          # Brigada, Brigadista, Recurso,
 │   │                                      # Ocorrencia, RegistroCampo, Usuario
 │   └── Enum/                              # PerfilUsuario, TipoRecurso, StatusOcorrencia
 │
-├── Argus.Operations.Tests/                # xUnit
-│   ├── Auth/                              # Testes de PasswordHasher e TokenService
-│   └── Controllers/                       # Testes do AuthController
+├── Argus.Operations.Tests/                # xUnit (26 testes)
+│   ├── Auth/                              # BcryptPasswordHasherTests, TokenServiceTests
+│   ├── Controllers/                       # AuthControllerTests, AlertasControllerTests,
+│   │                                      # FocosControllerTests
+│   └── Integration/                       # Fakes: FakeAlertaJavaClient, FakeFocoCalorJavaClient
 │
 ├── argus-tabelas-dotnet.sql               # DDL consolidado (alternativa às migrations)
+├── seed-dados-teste.sql                   # Carga inicial (brigadas, brigadistas, recursos,
+│                                          # ocorrências de exemplo)
 └── Argus.Operations.sln
 ```
 
@@ -635,11 +724,9 @@ Algumas escolhas de projeto que merecem nota:
 
 **Swashbuckle 6.9 em vez do 10.x mais recente**. O Swashbuckle 10.x depende do Microsoft.OpenApi 2.x, que introduziu um bug na serialização de `OpenApiSecuritySchemeReference`: o requirement de Bearer JWT é gerado como `[{}]` no `swagger.json`, o que faz o Swagger UI não enviar o header `Authorization` mesmo após o usuário clicar em Authorize. O downgrade para 6.9 (que usa Microsoft.OpenApi 1.x e o padrão clássico de `OpenApiReference`) resolveu o problema sem precisar de filtros customizados.
 
-**`MapInboundClaims = false` e `RoleClaimType` explícito**. A partir do .NET 8, o handler de JWT default mudou para o `JsonWebTokenHandler`, que tem comportamento sutilmente diferente do antigo `JwtSecurityTokenHandler` na hora de popular o `ClaimsIdentity`. Sem definir explicitamente `RoleClaimType = ClaimTypes.Role` no `TokenValidationParameters`, o `[Authorize(Roles = "...")]` falha silenciosamente — o claim chega no token, mas o `ClaimsIdentity.IsInRole` retorna `false` e o framework libera o acesso como se fosse `[Authorize]` sem roles. O endpoint `/api/auth/me` foi adicionado para diagnosticar esse tipo de problema rapidamente.
+**`MapInboundClaims = false` e `RoleClaimType` explícito**. No .NET 8+ o handler default de JWT (`JsonWebTokenHandler`) popula o `ClaimsIdentity` de forma sutilmente diferente do antigo. Sem definir `RoleClaimType = ClaimTypes.Role` no `TokenValidationParameters`, `[Authorize(Roles = "...")]` falha **silenciosamente** — o claim de role chega no token mas `IsInRole` retorna `false` e o framework libera o acesso como se fosse `[Authorize]` sem roles. O `GET /api/auth/me` foi adicionado pra diagnosticar esse tipo de problema rapidamente.
 
 **Defense in depth no mobile**. Embora o app mobile aplique UI condicional (esconde botões que o usuário não pode usar), o backend não confia nisso: todo endpoint mantém seu `[Authorize(Roles = "...")]` ativo. A UI evita confusão e cliques sem efeito; o backend garante segurança real. Um aplicativo modificado ou uma chamada feita por fora ainda recebe 403 do servidor.
-
-**Código de convite no registro**. O endpoint `/api/auth/register` exige um código fixo configurado em `appsettings.json` (`Auth:CodigoConvite`). É uma simplificação do que seria um fluxo de convite real (token único por convidado, expiração, etc.), apropriada ao escopo acadêmico. Em produção, o coordenador da brigada geraria um código de convite específico para cada novo membro, com validade limitada e uso único.
 
 **Serilog substituindo o `ILogger` padrão, posicionado ANTES do `UseExceptionHandler`**. O `ILogger` default do ASP.NET Core emite logs em texto simples e quebra cada request em 3-4 linhas separadas (start, action selecting, executing, completed). O Serilog com `UseSerilogRequestLogging()` consolida em uma linha estruturada por request (método, path, status, duração em ms) e permite que filtros por `SourceContext` sejam definidos sem recompilar — útil pra silenciar verbosidade do EF Core sem perder logs da aplicação. O detalhe sutil é o **posicionamento no pipeline**: `UseSerilogRequestLogging()` precisa vir antes de `UseExceptionHandler()`. Se vier depois, ele loga o status HTTP no momento em que a exception passa por ele (geralmente 500 default), antes do handler converter pra 503/504 com mensagem amigável — o log "mente" sobre o que o cliente realmente recebeu. Com a ordem correta, o exception handler "termina" o request primeiro (escrevendo 503 no response), e o request logging registra o status verdadeiro quando o pipeline retorna.
 
@@ -715,8 +802,8 @@ Suíte completa em xUnit rodando localmente — 26 testes cobrindo `AuthControll
 
 | Nome | RM | Responsabilidade no Argus |
 |---|---|---|
-| Anna Beatriz de Araujo Bonfim | 559561 | .NET (esta API) + Mobile (React Native) + parte de Compliance/TOGAF |
-| Alane Rocha da Silva | 561052 | Java Advanced (Intelligence API + RabbitMQ) + PL/SQL + Compliance |
+| Anna Beatriz de Araujo Bonfim | 559561 | .NET (esta API) + [Mobile (React Native)](https://github.com/annabonfim/argus-app) + parte de Compliance/TOGAF |
+| Alane Rocha da Silva | 561052 | Java Advanced ([Intelligence API](https://github.com/alanerochaa/argus-intelligence-api) + RabbitMQ) + PL/SQL + Compliance |
 | Maria Eduarda Araujo Penas | 560944 | DevOps & Cloud (Azure Pipelines) + Disruptive Architectures (IoT) + Compliance |
 
 **Turma:** TDS — FIAP

@@ -254,9 +254,12 @@ Os 3 campos do contato de emergência andam juntos por convenção (todos preenc
 | GET `/api/ocorrencias` | sim | sim | sim |
 | PUT `/api/ocorrencias` (atualizar status em campo) | sim | sim | sim |
 | POST/DELETE `/api/ocorrencias` | sim | sim | nao |
-| CRUD `/api/registroscampo` | sim | sim | sim |
+| GET `/api/registroscampo` | sim | sim | sim |
+| POST/PUT/DELETE `/api/registroscampo` | sim | sim | só na própria brigada¹ |
 
-A restrição é aplicada em duas camadas. No backend, atributos `[Authorize(Roles = "...")]` controlam o acesso a cada endpoint, e a constante única `Roles.AdminECoordenador` evita strings mágicas espalhadas pelo código. No JWT, o claim `role` carrega o perfil do usuário, lido a partir do enum `PerfilUsuario.ToString()`.
+¹ **Brigadista só pode escrever (criar/editar/deletar) registros de ocorrências da própria brigada** — `Ocorrencia.BrigadaId` precisa bater com a brigada do `Brigadista` vinculado ao `Usuario` logado (`Usuario.BrigadistaId → Brigadista.BrigadaId`). Se o Usuario brigadista não tiver vínculo (`BrigadistaId == null`), também recebe 403 nas escritas — fica como "voluntário pré-vinculação". Admin/Coordenador escrevem em qualquer brigada.
+
+A restrição é aplicada em duas camadas. No backend, atributos `[Authorize(Roles = "...")]` controlam o acesso a cada endpoint, e a constante única `Roles.AdminECoordenador` evita strings mágicas espalhadas pelo código. No JWT, o claim `role` carrega o perfil do usuário, lido a partir do enum `PerfilUsuario.ToString()`. A regra granular por brigada em `/api/registroscampo` é aplicada **em código** (checagem programática contra o banco no `RegistrosCampoController`), porque atributos `[Authorize]` não cobrem regras que dependem de dados — coberto por testes que incluem caso de bypass (brigadista tentando trocar `OcorrenciaId` no body pra forjar acesso).
 
 ## Endpoints
 
@@ -680,13 +683,14 @@ O projeto `Argus.Operations.Tests` reúne testes unitários e integração-leve 
 dotnet test
 ```
 
-Cobertura atual (26 testes verdes em torno de 1 segundo):
+Cobertura atual (38 testes verdes em torno de 1 segundo):
 
 - **`BcryptPasswordHasherTests`**: garante que `Hash` produz valores não vazios e diferentes a cada chamada (salt aleatório do BCrypt), e que `Verify` aceita a senha correta e rejeita a errada.
 - **`TokenServiceTests`**: valida o formato do JWT gerado (header.payload.signature), a presença das claims básicas (`sub`, `email`, `name`), o claim de role correspondente ao `PerfilUsuario`, e a unicidade do `jti` em chamadas consecutivas (prevenção de replay).
 - **`AuthControllerTests`**: usa `ArgusDbContext` com provider InMemory para exercitar o fluxo completo de `/api/auth/login` (credenciais válidas, senha errada, email inexistente, usuário inativo) e `/api/auth/register` (código de convite correto, código errado, email já existente).
 - **`AlertasControllerTests`**: cobre o proxy `/api/alertas` (listagem e busca por id) e o endpoint `/api/alertas/{id}/criar-ocorrencia` que promove um alerta do Java a uma ocorrência operacional — testando caminho feliz, alerta inexistente no Java (404), brigada inexistente (400 com mensagem específica), brigadista inexistente (400) e herança automática da descrição quando não fornecida.
 - **`FocosControllerTests`**: valida o proxy `/api/focos` (mapa de calor), tanto com dados quanto com resposta vazia do Java.
+- **`RegistrosCampoControllerTests`**: cobre a autorização granular por brigada nos endpoints de escrita (Create/Update/Delete). 12 casos: caminho feliz pra brigadista na mesma brigada (201/204), bloqueio (`Forbid`) pra brigadista tentando escrever em ocorrência de outra brigada, bloqueio pra brigadista sem vínculo operacional, passe-livre pra Admin e Coordenador em qualquer brigada, `NotFound` quando ocorrência referenciada não existe, e **caso de anti-bypass** (brigadista tentando trocar `OcorrenciaId` no body do PUT pra forjar acesso — regra valida contra o registro ORIGINAL no banco).
 
 A camada de integração com Java usa **fakes manuais** (sem Moq) que implementam `IAlertaJavaClient` e `IFocoCalorJavaClient` — segue o padrão "sem mocks externos" já estabelecido no resto da suíte. A escolha de cobrir profundamente autenticação + integração é deliberada: o CRUD dos demais controllers é predominantemente código que delega ao EF Core, e seu comportamento é mais bem demonstrado via Swagger do que via testes que essencialmente testariam o próprio framework.
 
@@ -730,10 +734,10 @@ argus-operations/
 │   │                                      # Ocorrencia, RegistroCampo, Usuario
 │   └── Enum/                              # PerfilUsuario, TipoRecurso, StatusOcorrencia
 │
-├── Argus.Operations.Tests/                # xUnit (26 testes)
+├── Argus.Operations.Tests/                # xUnit (38 testes)
 │   ├── Auth/                              # BcryptPasswordHasherTests, TokenServiceTests
 │   ├── Controllers/                       # AuthControllerTests, AlertasControllerTests,
-│   │                                      # FocosControllerTests
+│   │                                      # FocosControllerTests, RegistrosCampoControllerTests
 │   └── Integration/                       # Fakes: FakeAlertaJavaClient, FakeFocoCalorJavaClient
 │
 ├── argus-tabelas-dotnet.sql               # DDL consolidado (alternativa às migrations)
@@ -829,7 +833,7 @@ Lista completa de endpoints agrupados por controller, com botão **Authorize** a
 
 ![dotnet test passando](docs/prints/dotnet-test.png)
 
-Suíte completa em xUnit rodando localmente — 26 testes cobrindo `AuthController`, `AlertasController`, `FocosController`, `PasswordHasher` e `TokenService`.
+Suíte completa em xUnit rodando localmente — 38 testes cobrindo `AuthController`, `AlertasController`, `FocosController`, `RegistrosCampoController` (autorização granular por brigada), `PasswordHasher` e `TokenService`.
 
 ## Integrantes
 

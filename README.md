@@ -25,6 +25,7 @@ O projeto faz parte da Global Solution 2026/1 da FIAP, cujo tema é **economia e
 
 - 🎤 **Pitch (3 min):** https://youtu.be/TGzXcXq6UF4
 - 🎬 **Demo completa (8 min):** https://youtu.be/a-449ypErKE
+- 📱 **Demo do app mobile:** https://youtu.be/2FBIzb-WXX8
 
 ## Sumário
 

@@ -1,0 +1,137 @@
+trigger:
+  branches:
+    include:
+      - main
+
+pr:
+  branches:
+    include:
+      - main
+
+variables:
+  buildConfiguration: 'Release'
+  dotnetVersion: '9.0.x'
+  resourceGroupName: 'rg-argus-rm561052'
+  acrName: 'acrargusrm561052'
+  acrLoginServer: 'acrargusrm561052.azurecr.io'
+  imageName: 'argus-operations-api'
+  aciName: 'aci-argus-rm561052'
+  dnsLabel: 'argus-rm561052-api'
+  containerPort: '8080'
+  azureSubscription: 'Azure for Students'
+
+stages:
+- stage: Build
+  displayName: 'Build, Test and Publish Artifact'
+  jobs:
+  - job: BuildJob
+    displayName: 'Build .NET API'
+    pool:
+      vmImage: 'ubuntu-latest'
+
+    steps:
+    - task: UseDotNet@2
+      displayName: 'Install .NET SDK 9'
+      inputs:
+        packageType: 'sdk'
+        version: '$(dotnetVersion)'
+
+    - script: dotnet restore Argus.Operations.sln
+      displayName: 'Restore dependencies'
+
+    - script: dotnet build Argus.Operations.sln --configuration $(buildConfiguration) --no-restore
+      displayName: 'Build solution'
+
+    - script: dotnet test Argus.Operations.sln --configuration $(buildConfiguration) --no-build --logger trx --results-directory $(Agent.TempDirectory)/TestResults
+      displayName: 'Run automated tests'
+
+    - task: PublishTestResults@2
+      displayName: 'Publish test results'
+      condition: succeededOrFailed()
+      inputs:
+        testResultsFormat: 'VSTest'
+        testResultsFiles: '$(Agent.TempDirectory)/TestResults/*.trx'
+        failTaskOnFailedTests: true
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Publish API package'
+      inputs:
+        command: 'publish'
+        publishWebProjects: false
+        projects: 'Argus.Operations.API/Argus.Operations.API.csproj'
+        arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)/api'
+        zipAfterPublish: true
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish build artifact'
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+        ArtifactName: 'drop'
+        publishLocation: 'Container'
+
+- stage: DockerAndDeploy
+  displayName: 'Build Docker Image and Deploy to ACI'
+  dependsOn: Build
+  condition: succeeded()
+  jobs:
+  - job: DockerDeployJob
+    displayName: 'Build image, push to ACR and deploy ACI'
+    pool:
+      vmImage: 'ubuntu-latest'
+
+    steps:
+    - task: AzureCLI@2
+      displayName: 'Login, build image and deploy container'
+      inputs:
+        azureSubscription: '$(azureSubscription)'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          echo "Logging into Azure Container Registry..."
+          az acr login --name $(acrName)
+
+          echo "Building Docker image..."
+          docker build \
+            -f dockerfiles/Dockerfile \
+            -t $(acrLoginServer)/$(imageName):$(Build.BuildId) \
+            -t $(acrLoginServer)/$(imageName):latest \
+            .
+
+          echo "Pushing Docker image to ACR..."
+          docker push $(acrLoginServer)/$(imageName):$(Build.BuildId)
+          docker push $(acrLoginServer)/$(imageName):latest
+
+          echo "Getting ACR credentials..."
+          ACR_USERNAME=$(az acr credential show --name $(acrName) --query "username" -o tsv)
+          ACR_PASSWORD=$(az acr credential show --name $(acrName) --query "passwords[0].value" -o tsv)
+
+          echo "Removing previous Azure Container Instance if exists..."
+          az container delete \
+            --resource-group $(resourceGroupName) \
+            --name $(aciName) \
+            --yes || true
+
+          echo "Creating Azure Container Instance with latest API image..."
+          az container create \
+            --resource-group $(resourceGroupName) \
+            --name $(aciName) \
+            --image $(acrLoginServer)/$(imageName):latest \
+            --registry-login-server $(acrLoginServer) \
+            --registry-username $ACR_USERNAME \
+            --registry-password $ACR_PASSWORD \
+            --os-type Linux \
+            --cpu 1 \
+            --memory 1 \
+            --ports $(containerPort) \
+            --ip-address Public \
+            --dns-name-label $(dnsLabel) \
+            --environment-variables \
+              ASPNETCORE_ENVIRONMENT=Production \
+              ASPNETCORE_URLS=http://+:8080
+
+          echo "Deploy completed."
+          az container show \
+            --resource-group $(resourceGroupName) \
+            --name $(aciName) \
+            --query "{name:name, provisioningState:provisioningState, fqdn:ipAddress.fqdn}" \
+            -o table

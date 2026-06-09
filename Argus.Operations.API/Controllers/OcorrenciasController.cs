@@ -55,8 +55,11 @@ public class OcorrenciasController : ControllerBase
         );
     }
 
-    // PUT /api/ocorrencias/7 → atualiza uma ocorrência existente
+    // PUT /api/ocorrencias/7 → atualiza uma ocorrência existente.
+    // Só Admin/Coordenador editam a ocorrência em si; brigadista apenas
+    // adiciona registros de campo a ela (ver RegistrosCampoController).
     [HttpPut("{id}")]
+    [Authorize(Roles = Roles.AdminECoordenador)]
     public async Task<IActionResult> Update(long id, Ocorrencia ocorrencia)
     {
         if (id != ocorrencia.Id)

@@ -1,5 +1,7 @@
 using Argus.Operations.API.Auth;
+using Argus.Operations.API.DTOs.Ocorrencias;
 using Argus.Operations.Domain.Entities;
+using Argus.Operations.Domain.Enums;
 using Argus.Operations.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -13,11 +15,13 @@ namespace Argus.Operations.API.Controllers;
 public class OcorrenciasController : ControllerBase
 {
     private readonly ArgusDbContext _context;
+    private readonly OcorrenciaAuthorizationService _auth;
 
-    // Injeção de dependência: o .NET nos entrega o DbContext via construtor
-    public OcorrenciasController(ArgusDbContext context)
+    // Injeção de dependência: DbContext + serviço de autorização granular.
+    public OcorrenciasController(ArgusDbContext context, OcorrenciaAuthorizationService auth)
     {
         _context = context;
+        _auth = auth;
     }
 
     // GET /api/ocorrencias → lista todas as ocorrências
@@ -72,6 +76,32 @@ public class OcorrenciasController : ControllerBase
         _context.Entry(ocorrencia).State = EntityState.Modified;
         await _context.SaveChangesAsync();
 
+        return NoContent();
+    }
+
+    // PATCH /api/ocorrencias/7/status → avança o status operacional.
+    // Diferente do PUT: o brigadista PODE mexer aqui, desde que a ocorrência
+    // seja da PRÓPRIA brigada (Admin/Coordenador mexem em qualquer uma). É a
+    // ação de campo — marcar a ocorrência como EmAtendimento/Controlada/etc.
+    [HttpPatch("{id}/status")]
+    public async Task<IActionResult> AtualizarStatus(long id, AtualizarStatusOcorrenciaRequest request)
+    {
+        var ocorrencia = await _context.Ocorrencias.FirstOrDefaultAsync(o => o.Id == id);
+        if (ocorrencia == null)
+            return NotFound();
+
+        // Regra granular por brigada (mesma de RegistrosCampo).
+        if (!await _auth.PodeEscreverNaBrigadaAsync(User, ocorrencia.BrigadaId))
+            return Forbid();
+
+        ocorrencia.Status = request.Status;
+
+        // Ao finalizar, carimba a data de finalização; se reabrir, limpa.
+        ocorrencia.DataFinalizacao = request.Status == StatusOcorrencia.Finalizada
+            ? DateTime.UtcNow
+            : null;
+
+        await _context.SaveChangesAsync();
         return NoContent();
     }
 

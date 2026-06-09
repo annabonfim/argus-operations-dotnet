@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using Argus.Operations.API.Auth;
 using Argus.Operations.Domain.Entities;
 using Argus.Operations.Infrastructure.Data;
@@ -14,11 +13,14 @@ namespace Argus.Operations.API.Controllers;
 public class RegistrosCampoController : ControllerBase
 {
     private readonly ArgusDbContext _context;
+    private readonly OcorrenciaAuthorizationService _auth;
 
-    // Injeção de dependência: o .NET nos entrega o DbContext via construtor
-    public RegistrosCampoController(ArgusDbContext context)
+    // Injeção de dependência: o .NET nos entrega o DbContext e o serviço de
+    // autorização granular via construtor.
+    public RegistrosCampoController(ArgusDbContext context, OcorrenciaAuthorizationService auth)
     {
         _context = context;
+        _auth = auth;
     }
 
     // GET /api/registroscampo → lista todos os registros de campo
@@ -46,7 +48,8 @@ public class RegistrosCampoController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<RegistroCampo>> Create(RegistroCampo registro)
     {
-        var bloqueio = await ChecarPermissaoPorOcorrenciaAsync(registro.OcorrenciaId);
+        var bloqueio = MapearBloqueio(
+            await _auth.ChecarPorOcorrenciaIdAsync(User, registro.OcorrenciaId));
         if (bloqueio != null)
             return bloqueio;
 
@@ -76,7 +79,8 @@ public class RegistrosCampoController : ControllerBase
         // Checa contra a ocorrência ORIGINAL do registro (não a do body) pra
         // evitar bypass: brigadista da brigada X mudando OcorrenciaId pra
         // forjar acesso a registro de outra brigada.
-        var bloqueio = await ChecarPermissaoPorOcorrenciaAsync(existente.OcorrenciaId);
+        var bloqueio = MapearBloqueio(
+            await _auth.ChecarPorOcorrenciaIdAsync(User, existente.OcorrenciaId));
         if (bloqueio != null)
             return bloqueio;
 
@@ -95,7 +99,8 @@ public class RegistrosCampoController : ControllerBase
         if (registro == null)
             return NotFound();
 
-        var bloqueio = await ChecarPermissaoPorOcorrenciaAsync(registro.OcorrenciaId);
+        var bloqueio = MapearBloqueio(
+            await _auth.ChecarPorOcorrenciaIdAsync(User, registro.OcorrenciaId));
         if (bloqueio != null)
             return bloqueio;
 
@@ -105,39 +110,12 @@ public class RegistrosCampoController : ControllerBase
         return NoContent();
     }
 
-    // Regra: Admin/Coordenador escrevem qualquer registro. Brigadista só
-    // escreve em ocorrências da PRÓPRIA brigada (Ocorrencia.BrigadaId ==
-    // brigada do Brigadista vinculado ao Usuario logado).
-    // Retorna null quando OK; retorna ActionResult de bloqueio (404 ou Forbid)
-    // quando a operação não pode prosseguir.
-    private async Task<ActionResult?> ChecarPermissaoPorOcorrenciaAsync(long ocorrenciaId)
+    // Traduz o resultado da regra de permissão em ActionResult de bloqueio.
+    // Retorna null quando a operação pode prosseguir.
+    private ActionResult? MapearBloqueio(ResultadoPermissao resultado) => resultado switch
     {
-        // Admin/Coordenador passa direto — não filtra por brigada.
-        if (User.IsInRole(Roles.Admin) || User.IsInRole(Roles.Coordenador))
-            return null;
-
-        // Brigadista precisa estar vinculado a um Brigadista (entidade) pra
-        // ter "brigada de atuação". Sem vínculo → não tem responsabilidade
-        // operacional, só observa.
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (!long.TryParse(userIdClaim, out var userId))
-            return Forbid();
-
-        var usuario = await _context.Usuarios
-            .Include(u => u.Brigadista)
-            .FirstOrDefaultAsync(u => u.Id == userId);
-
-        if (usuario?.Brigadista == null)
-            return Forbid();
-
-        var ocorrencia = await _context.Ocorrencias.AsNoTracking()
-            .FirstOrDefaultAsync(o => o.Id == ocorrenciaId);
-        if (ocorrencia == null)
-            return NotFound();
-
-        if (ocorrencia.BrigadaId != usuario.Brigadista.BrigadaId)
-            return Forbid();
-
-        return null;
-    }
+        ResultadoPermissao.Permitido => null,
+        ResultadoPermissao.OcorrenciaNaoEncontrada => NotFound(),
+        _ => Forbid()
+    };
 }

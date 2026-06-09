@@ -260,14 +260,16 @@ Os 3 campos do contato de emergência andam juntos por convenção (todos preenc
 | GET `/api/brigadas`, `/brigadistas`, `/recursos` | sim | sim | sim |
 | POST/PUT/DELETE em `/brigadas`, `/brigadistas`, `/recursos` | sim | sim | nao |
 | GET `/api/ocorrencias` | sim | sim | sim |
-| PUT `/api/ocorrencias` (atualizar status em campo) | sim | sim | sim |
-| POST/DELETE `/api/ocorrencias` | sim | sim | nao |
+| POST/PUT/DELETE `/api/ocorrencias` (editar a ocorrência) | sim | sim | nao |
+| PATCH `/api/ocorrencias/{id}/status` (avançar status em campo) | sim | sim | só na própria brigada¹ |
 | GET `/api/registroscampo` | sim | sim | sim |
 | POST/PUT/DELETE `/api/registroscampo` | sim | sim | só na própria brigada¹ |
 
-¹ **Brigadista só pode escrever (criar/editar/deletar) registros de ocorrências da própria brigada** — `Ocorrencia.BrigadaId` precisa bater com a brigada do `Brigadista` vinculado ao `Usuario` logado (`Usuario.BrigadistaId → Brigadista.BrigadaId`). Se o Usuario brigadista não tiver vínculo (`BrigadistaId == null`), também recebe 403 nas escritas — fica como "voluntário pré-vinculação". Admin/Coordenador escrevem em qualquer brigada.
+¹ **Regra granular por brigada.** O brigadista só escreve em recursos de ocorrências da **própria brigada** — `Ocorrencia.BrigadaId` precisa bater com a brigada do `Brigadista` vinculado ao `Usuario` logado (`Usuario.BrigadistaId → Brigadista.BrigadaId`). Vale para os registros de campo (criar/editar/deletar) **e** para o avanço de status da ocorrência. Se o Usuario brigadista não tiver vínculo (`BrigadistaId == null`), também recebe 403 — fica como "voluntário pré-vinculação". Admin/Coordenador escrevem em qualquer brigada.
 
-A restrição é aplicada em duas camadas. No backend, atributos `[Authorize(Roles = "...")]` controlam o acesso a cada endpoint, e a constante única `Roles.AdminECoordenador` evita strings mágicas espalhadas pelo código. No JWT, o claim `role` carrega o perfil do usuário, lido a partir do enum `PerfilUsuario.ToString()`. A regra granular por brigada em `/api/registroscampo` é aplicada **em código** (checagem programática contra o banco no `RegistrosCampoController`), porque atributos `[Authorize]` não cobrem regras que dependem de dados — coberto por testes que incluem caso de bypass (brigadista tentando trocar `OcorrenciaId` no body pra forjar acesso).
+> **Editar a ocorrência ≠ avançar o status.** A ocorrência em si (descrição, brigada/brigadista responsável, localização) só é editada por Admin/Coordenador via `PUT`. O brigadista de campo **não edita** a ocorrência — ele apenas **avança o status operacional** (Aberta → EmAtendimento → Controlada → Finalizada) da própria brigada, via o endpoint dedicado `PATCH /{id}/status`. Ao finalizar, o servidor carimba `DataFinalizacao` automaticamente.
+
+A restrição é aplicada em duas camadas. No backend, atributos `[Authorize(Roles = "...")]` controlam o acesso a cada endpoint, e a constante única `Roles.AdminECoordenador` evita strings mágicas espalhadas pelo código. No JWT, o claim `role` carrega o perfil do usuário, lido a partir do enum `PerfilUsuario.ToString()`. A regra granular por brigada é aplicada **em código**, centralizada no serviço compartilhado `OcorrenciaAuthorizationService` (injetado em `RegistrosCampoController` e `OcorrenciasController`), porque atributos `[Authorize]` não cobrem regras que dependem de dados — coberto por testes que incluem caso de bypass (brigadista tentando trocar `OcorrenciaId` no body pra forjar acesso).
 
 ## Endpoints
 
@@ -434,9 +436,9 @@ Resposta: `204 No Content`.
 }
 ```
 
-### `PUT /api/ocorrencias/{id}` — atualizar status (qualquer perfil logado)
+### `PUT /api/ocorrencias/{id}` — editar a ocorrência (Admin/Coordenador)
 
-Brigadistas podem dar PUT pra registrar mudança de status (atendimento → finalizada) mesmo sem permissão de criar ou deletar. Lembre de **trocar o token pro de Brigadista** antes de tentar pra ver isso funcionar. O `id` no corpo precisa bater com o `id` da URL.
+Edição completa da ocorrência (descrição, brigada/brigadista responsável, localização). Restrito a Admin/Coordenador — brigadista recebe `403 Forbidden`. O `id` no corpo precisa bater com o `id` da URL.
 
 ```json
 {
@@ -453,6 +455,20 @@ Brigadistas podem dar PUT pra registrar mudança de status (atendimento → fina
 ```
 
 Resposta: `204 No Content`.
+
+### `PATCH /api/ocorrencias/{id}/status` — avançar status em campo (brigadista da própria brigada)
+
+A ação de campo: o brigadista marca o avanço operacional da ocorrência **da própria brigada** sem poder editar o resto. Body mínimo — só o novo status. Admin/Coordenador podem avançar o status de qualquer brigada; brigadista de **outra** brigada recebe `403 Forbidden` (mesma regra granular dos registros de campo). Ao mandar `status: 4` (Finalizada), o servidor carimba `dataFinalizacao` automaticamente.
+
+`status` é enum int: `1` = Aberta, `2` = EmAtendimento, `3` = Controlada, `4` = Finalizada.
+
+```json
+{
+  "status": 2
+}
+```
+
+Resposta: `204 No Content`. Erros: `404` se a ocorrência não existe, `403` se for brigadista de outra brigada (ou sem vínculo).
 
 ### `POST /api/alertas/{id}/criar-ocorrencia` — promover alerta a ocorrência (Admin/Coordenador)
 
@@ -521,6 +537,7 @@ Pra ver a autorização por role em ação, faça login como Brigadista (`brig@a
 
 - **`DELETE /api/brigadas/1`** → esperado `403 Forbidden` (DELETE é Admin/Coordenador-only)
 - **`GET /api/usuarios`** → esperado `403 Forbidden` (qualquer operação em `/api/usuarios` é Admin-only)
+- **`PUT /api/ocorrencias/1`** → esperado `403 Forbidden` (editar a ocorrência é Admin/Coordenador-only; brigadista não edita a ocorrência, só avança o status — ver abaixo)
 
 Volte pro token de Admin e os mesmos endpoints respondem `204` e `200` respectivamente.
 
@@ -529,9 +546,10 @@ Volte pro token de Admin e os mesmos endpoints respondem `204` e `200` respectiv
 1. Logue como `maria.silva@argus.com` / `Teste@123` (brigadista vinculada à Brigada 1 via auto-link por email).
 2. `POST /api/registroscampo` apontando para uma **ocorrência da Brigada 1** → `201 Created`.
 3. Mesmo POST apontando para uma **ocorrência de outra brigada** → `403 Forbidden`, mesmo o brigadista sendo um perfil que normalmente "pode" escrever registros — a regra é por brigada, não só por role.
-4. Logue como Admin e o mesmo POST de cross-brigada responde `201` — Admin/Coordenador escrevem em qualquer brigada.
+4. `PATCH /api/ocorrencias/{id}/status` com `{ "status": 2 }` numa **ocorrência da Brigada 1** → `204 No Content` (avança o status da própria brigada); a mesma chamada numa ocorrência de **outra brigada** → `403 Forbidden`.
+5. Logue como Admin e as chamadas de cross-brigada respondem `201`/`204` — Admin/Coordenador escrevem em qualquer brigada.
 
-Isso prova que a autorização tem **duas camadas**: `[Authorize(Roles = ...)]` no atributo + checagem programática contra o banco no controller (incluindo proteção contra bypass via troca de `OcorrenciaId` no body do PUT).
+Isso prova que a autorização tem **duas camadas**: `[Authorize(Roles = ...)]` no atributo + checagem programática contra o banco, centralizada no `OcorrenciaAuthorizationService` (incluindo proteção contra bypass via troca de `OcorrenciaId` no body do PUT).
 
 ## Tratamento global de erros
 

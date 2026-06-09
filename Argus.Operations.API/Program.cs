@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Text;
+using Argus.Operations.API.Auth;
 using Argus.Operations.API.Exceptions;
 using Argus.Operations.Application.Auth;
 using Argus.Operations.Application.Integration;
@@ -130,6 +131,10 @@ builder.Services.AddDbContext<ArgusDbContext>(options =>
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"));
 builder.Services.AddSingleton<ITokenService, TokenService>();
 builder.Services.AddSingleton<IPasswordHasher, BcryptPasswordHasher>();
+
+// Autorização granular por brigada (compartilhada entre RegistrosCampo e o
+// avanço de status de Ocorrencia). Scoped porque depende do DbContext.
+builder.Services.AddScoped<OcorrenciaAuthorizationService>();
 
 // ===== Autenticação JWT =====
 var jwtSettings = builder.Configuration.GetSection("Jwt").Get<JwtSettings>()!;

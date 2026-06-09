@@ -32,7 +32,7 @@ public class RegistrosCampoControllerTests
 
         var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"));
 
-        var controller = new RegistrosCampoController(db)
+        var controller = new RegistrosCampoController(db, new OcorrenciaAuthorizationService(db))
         {
             ControllerContext = new ControllerContext
             {

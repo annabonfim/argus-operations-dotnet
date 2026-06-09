@@ -10,6 +10,7 @@ using Argus.Operations.Infrastructure.Messaging;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -38,7 +39,10 @@ builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
 
 // ===== Health Checks (app + Oracle via DbContext) =====
+// "self" = liveness da própria aplicação (se responde, o processo está de pé);
+// "oracle-db" = conectividade com o banco. Os dois aparecem separados no JSON de /health.
 builder.Services.AddHealthChecks()
+    .AddCheck("self", () => HealthCheckResult.Healthy("API no ar"), tags: ["live"])
     .AddDbContextCheck<ArgusDbContext>(name: "oracle-db");
 
 // ===== Clientes HTTP tipados pra API Java (alertas e focos via satélite) =====

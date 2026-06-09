@@ -878,6 +878,6 @@ As duas primeiras provam comportamentos que só aparecem em runtime (não dá pr
 | Alane Rocha da Silva | 561052 | Java Advanced ([Intelligence API](https://github.com/alanerochaa/argus-intelligence-api) + RabbitMQ) + PL/SQL + Compliance |
 | Maria Eduarda Araujo Penas | 560944 | DevOps & Cloud (Azure Pipelines) + Disruptive Architectures (IoT) + Compliance |
 
-**Turma:** TDS — FIAP
-**Projeto:** Global Solution 2026/1 — Argus
+**Turma:** 2TDSPS — FIAP
+**Projeto:** Global Solution 2026/06 — Argus
 **Data de entrega:** 09/06/2026

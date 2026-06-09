@@ -13,7 +13,7 @@
   <img alt="JWT" src="https://img.shields.io/badge/JWT-Bearer-000000?style=for-the-badge&logo=jsonwebtokens&logoColor=white">
   <img alt="Swagger" src="https://img.shields.io/badge/Swagger-OpenAPI-85EA2D?style=for-the-badge&logo=swagger&logoColor=black">
   <img alt="Serilog" src="https://img.shields.io/badge/Serilog-Structured%20Logs-1C1C1C?style=for-the-badge">
-  <img alt="xUnit" src="https://img.shields.io/badge/xUnit-26%2F26%20%E2%9C%93-5C2D91?style=for-the-badge">
+  <img alt="xUnit" src="https://img.shields.io/badge/xUnit-38%2F38%20%E2%9C%93-5C2D91?style=for-the-badge">
   <img alt="Azure" src="https://img.shields.io/badge/Azure-App%20Service-0078D4?style=for-the-badge&logo=microsoftazure&logoColor=white">
 </p>
 
@@ -21,8 +21,14 @@ API operacional do sistema **Argus**, voltada a operações de combate a incênd
 
 O projeto faz parte da Global Solution 2026/1 da FIAP, cujo tema é **economia espacial**. Entre as direções sugeridas pela banca, escolhemos aplicar dados de satélite a um problema real em terra: o combate a incêndios florestais. O Argus se posiciona no eixo de **monitoramento ambiental e resposta a desastres** — a API operacional aqui presente é o backend que recebe os alertas de queimadas detectados por satélite (vindos do domínio Java, externo a esta API) e coordena a resposta das brigadas em campo.
 
+## Vídeos da apresentação
+
+- 🎤 **Pitch (3 min):** https://youtu.be/TGzXcXq6UF4
+- 🎬 **Demo completa (8 min):** https://youtu.be/a-449ypErKE
+
 ## Sumário
 
+- [Vídeos da apresentação](#vídeos-da-apresentação)
 - [Stack](#stack)
 - [Arquitetura](#arquitetura)
 - [Modelo de domínio](#modelo-de-domínio)
@@ -40,7 +46,7 @@ O projeto faz parte da Global Solution 2026/1 da FIAP, cujo tema é **economia e
 - [Estrutura de pastas](#estrutura-de-pastas)
 - [Decisões técnicas relevantes](#decisões-técnicas-relevantes)
 - [Deploy na Azure](#deploy-na-azure)
-- [Prints e evidências](#prints-e-evidências)
+- [Evidências em produção](#evidências-em-produção)
 - [Integrantes](#integrantes)
 
 ## Stack
@@ -477,6 +483,8 @@ Foto + GPS + observação coletados pelo brigadista durante o atendimento. Uma o
 }
 ```
 
+> ⚠️ **Regra granular por brigada:** se o usuário logado for Brigadista, a `ocorrenciaId` precisa pertencer à **mesma brigada** do brigadista vinculado ao usuário (via `Usuario.BrigadistaId → Brigadista.BrigadaId`). Brigadista de outra brigada → `403 Forbidden`. Admin/Coordenador escrevem em qualquer brigada. Detalhes na seção [Matriz de permissões](#matriz-de-permissões).
+
 ### `POST /api/usuarios` — criar usuário (apenas Admin)
 
 Diferente do `/api/auth/register` (público e Brigadista-only), esta rota é Admin-only e permite definir o `perfil` direto. Enum: `1` = Admin, `2` = Coordenador, `3` = Brigadista.
@@ -513,6 +521,15 @@ Pra ver a autorização por role em ação, faça login como Brigadista (`brig@a
 - **`GET /api/usuarios`** → esperado `403 Forbidden` (qualquer operação em `/api/usuarios` é Admin-only)
 
 Volte pro token de Admin e os mesmos endpoints respondem `204` e `200` respectivamente.
+
+**Cenário da regra granular por brigada** (a parte mais interessante):
+
+1. Logue como `maria.silva@argus.com` / `Teste@123` (brigadista vinculada à Brigada 1 via auto-link por email).
+2. `POST /api/registroscampo` apontando para uma **ocorrência da Brigada 1** → `201 Created`.
+3. Mesmo POST apontando para uma **ocorrência de outra brigada** → `403 Forbidden`, mesmo o brigadista sendo um perfil que normalmente "pode" escrever registros — a regra é por brigada, não só por role.
+4. Logue como Admin e o mesmo POST de cross-brigada responde `201` — Admin/Coordenador escrevem em qualquer brigada.
+
+Isso prova que a autorização tem **duas camadas**: `[Authorize(Roles = ...)]` no atributo + checagem programática contra o banco no controller (incluindo proteção contra bypass via troca de `OcorrenciaId` no body do PUT).
 
 ## Tratamento global de erros
 
@@ -640,6 +657,27 @@ flowchart LR
 - Mensagem entregue mais de uma vez por race no broker (AMQP é at-least-once por design, não exactly-once)
 - Re-publish da Alane durante testes
 - Restart do consumer no meio do processamento
+
+O detalhe que torna o consumer seguro é o `SELECT` de checagem **antes** do `INSERT` — uma reentrega da mesma mensagem é simplesmente reconhecida (ack) sem virar uma segunda ocorrência:
+
+```mermaid
+sequenceDiagram
+    participant Q as fila argus.alertas<br/>(CloudAMQP)
+    participant C as AlertaConsumerService<br/>(BackgroundService)
+    participant DB as Oracle FIAP
+
+    Q->>C: entrega AlertaQueueDto (alertaId=X)
+    C->>DB: SELECT Ocorrencias WHERE AlertaId == X
+    alt Não existe
+        DB-->>C: vazio
+        C->>DB: INSERT Ocorrencia (status=Aberta)
+        C->>Q: BasicAck
+    else Já existe (replay / re-publish)
+        DB-->>C: ocorrência encontrada
+        C->>Q: BasicAck (sem duplicar)
+    end
+    Note over C,Q: JSON malformado → Nack requeue=false (DLQ)<br/>Banco fora → Nack requeue=true (retry)
+```
 
 **Por que `BasicQos(prefetchCount: 1)`.** Configurar prefetch baixo é deliberado — processa uma mensagem por vez. Em troca de menos throughput, ganha previsibilidade na ordem de criação das ocorrências e simplifica a defesa de idempotência (não tem mensagem "em voo" enquanto outra é processada).
 
@@ -795,45 +833,39 @@ Workflow GitHub Actions gerado pelo **Azure Deployment Center** com autenticaç�
 
 Arquivo do workflow: [`.github/workflows/main_argus-operations-rm559561.yml`](.github/workflows/main_argus-operations-rm559561.yml).
 
-## Prints e evidências
+## Evidências em produção
 
-Galeria de evidências do projeto rodando. Os prints abaixo são gerados a partir da API publicada na Azure e do Swagger local — ficam em `docs/prints/` no repositório.
+A API está publicada na Azure e pode ser inspecionada ao vivo — deixamos os endpoints abertos para a banca verificar diretamente, e complementamos com prints das duas features que um clique no Swagger **não** revela (autorização granular por brigada e ocorrência criada pela fila):
 
-### Swagger publicado
+| Evidência | Link |
+|---|---|
+| 🌐 Landing page institucional | https://argus-operations-rm559561.azurewebsites.net |
+| 📘 Swagger UI (lista completa de endpoints, botão **Authorize** com JWT) | https://argus-operations-rm559561.azurewebsites.net/swagger |
+| ❤️ Health check do Oracle (`AddDbContextCheck` + duração) | https://argus-operations-rm559561.azurewebsites.net/health |
+| 📄 OpenAPI 3.0 JSON (consumível por Postman/Insomnia) | https://argus-operations-rm559561.azurewebsites.net/swagger/v1/swagger.json |
 
-![Swagger UI](docs/prints/swagger-ui.png)
+**Fluxo sugerido para a banca avaliar:**
 
-Lista completa de endpoints agrupados por controller, com botão **Authorize** ativo pra autenticação Bearer JWT.
+1. Abrir o Swagger e fazer `POST /api/auth/login` com `admin@argus.com` / `Admin@123` → recebe `token` (sem `senhaHash` no payload).
+2. Clicar em **Authorize** e colar `Bearer <token>`.
+3. Testar `GET /api/brigadas` → 200; sair do Authorize → 401; logar como Brigadista (`brig@argus.com` / `Brig@123`) → `DELETE /api/brigadas/1` → 403.
+4. `GET /api/alertas` → devolve a lista vinda da API Java (proxy) — comprova a integração service-to-service entre as duas APIs do grupo.
+5. `GET /health` → confirma que a API está conectada ao Oracle da FIAP em tempo real.
 
-### Fluxo de autenticação
+### Galeria de prints
 
-![Login retornando JWT](docs/prints/auth-login.png)
+As duas primeiras provam comportamentos que só aparecem em runtime (não dá pra ver clicando no Swagger): o `403` da regra granular por brigada e a ocorrência nascida de uma mensagem da fila.
 
-`POST /api/auth/login` devolvendo `token`, `expiraEm` e o objeto `usuario` (sem `senhaHash`).
+| Evidência | Print |
+|---|---|
+| ⭐ Autorização granular por brigada — brigadista de outra brigada recebe `403` ao tentar escrever registro | ![Autorização granular 403](docs/autorizacao-granular-403.png) |
+| ⭐ Mensageria — ocorrência criada pelo consumer a partir de alerta da fila (IDs 22, 25, 26 com `ID_ALERTA` preenchido) | ![Ocorrência criada via fila no banco](docs/mensageria-ocorrencia-no-banco.png) |
+| Swagger UI autenticado (botão **Authorize** com Bearer JWT ativo) | ![Swagger UI autorizado](docs/swagger-ui-autorizado.png) |
+| Health check do Oracle FIAP respondendo `Healthy` | ![Health check Oracle](docs/health-check-oracle.png) |
+| Deploy no Azure App Service (Linux B1, South Africa North) | ![Deploy Azure App Service](docs/deploy-azure-app-service.png) |
+| Suíte xUnit — 38 testes verdes | ![38 testes verdes](docs/dotnet-test-38-verdes.png) |
 
-### Endpoint protegido funcionando
-
-![GET /api/brigadas autorizado](docs/prints/brigadas-list.png)
-
-`GET /api/brigadas` retornando 200 com token válido. Sem token → 401; com token de role insuficiente → 403.
-
-### Integração com a API Java
-
-![GET /api/alertas via proxy](docs/prints/alertas-proxy.png)
-
-`GET /api/alertas` proxy pra API Java (NASA FIRMS) — devolve a lista de alertas reais detectados por satélite.
-
-### Health check do Oracle
-
-![GET /health com Oracle ok](docs/prints/health-check.png)
-
-`GET /health` validando conexão ao Oracle via `AddDbContextCheck`. Resposta inclui status, duração total e duração do check específico do banco.
-
-### Testes automatizados verdes
-
-![dotnet test passando](docs/prints/dotnet-test.png)
-
-Suíte completa em xUnit rodando localmente — 38 testes cobrindo `AuthController`, `AlertasController`, `FocosController`, `RegistrosCampoController` (autorização granular por brigada), `PasswordHasher` e `TokenService`.
+**Suíte local:** rodar `dotnet test` reproduz os 38 testes em xUnit cobrindo `AuthController`, `AlertasController`, `FocosController`, `RegistrosCampoController` (incluindo autorização granular por brigada e teste de bypass), `PasswordHasher` e `TokenService`.
 
 ## Integrantes
 

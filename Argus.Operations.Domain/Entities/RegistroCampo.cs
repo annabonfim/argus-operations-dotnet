@@ -4,7 +4,7 @@ public class RegistroCampo
 {
     public long Id { get; set; }
     public string Observacao { get; set; } = string.Empty;
-    public string UrlFoto { get; set; } = string.Empty;
+    public string? UrlFoto { get; set; }
     public double Latitude { get; set; }
     public double Longitude { get; set; }
     public DateTime DataRegistro { get; set; }

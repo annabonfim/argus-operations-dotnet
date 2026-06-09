@@ -155,7 +155,7 @@ public class ArgusDbContext : DbContext
             entity.HasKey(r => r.Id);
             entity.Property(r => r.Id).HasColumnName("ID_REGISTRO_CAMPO").ValueGeneratedOnAdd();
             entity.Property(r => r.Observacao).HasColumnName("OBSERVACAO").HasMaxLength(1000);
-            entity.Property(r => r.UrlFoto).HasColumnName("URL_FOTO").HasMaxLength(500);
+            entity.Property(r => r.UrlFoto).HasColumnName("URL_FOTO").HasMaxLength(500).IsRequired(false);
             entity.Property(r => r.Latitude).HasColumnName("LATITUDE").IsRequired();
             entity.Property(r => r.Longitude).HasColumnName("LONGITUDE").IsRequired();
             entity.Property(r => r.DataRegistro).HasColumnName("DATA_REGISTRO").IsRequired();

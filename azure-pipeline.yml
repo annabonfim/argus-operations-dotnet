@@ -1,3 +1,7 @@
+# Pipeline CI/CD - Task AB#4 e AB#5
+# AB#4: build, testes automatizados e artefatos
+# AB#5: imagem Docker, ACR e deploy no ACI
+
 trigger:
   branches:
     include:

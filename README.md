@@ -12,24 +12,24 @@
 
 ---
 
-## 1. Visão Geral do Projeto
+## 1. Visão Geral
 
-O **Argus Operations API** é uma API REST desenvolvida em **C# com ASP.NET Core .NET 9**, utilizada para apoio operacional no gerenciamento de recursos, equipes e ocorrências relacionadas a operações de combate, prevenção e monitoramento.
+O **Argus Operations API** é uma API REST desenvolvida em **C# com ASP.NET Core .NET 9**, utilizada para gerenciamento operacional de brigadas, recursos e ocorrências relacionadas a operações de monitoramento, prevenção e resposta.
 
 Este repositório foi estruturado para a entrega da disciplina **DevOps Tools & Cloud Computing**, utilizando uma solução da disciplina **Advanced Business Development with .NET**.
 
-O foco principal desta entrega é demonstrar um fluxo DevOps completo com:
+A entrega demonstra um fluxo DevOps completo utilizando:
 
-* Planejamento e rastreabilidade no **Azure Boards**.
-* Versionamento Git no **Azure Repos**.
-* Integração e entrega contínua com **Azure Pipelines**.
-* Infraestrutura provisionada por **Azure CLI**.
-* Containerização com **Docker**.
-* Publicação da imagem no **Azure Container Registry — ACR**.
-* Deploy em nuvem no **Azure Container Instance — ACI**.
-* Execução de testes automatizados.
-* Publicação de artefatos de build.
-* Validação de CRUD em ambiente publicado em nuvem.
+* **Azure Boards** para planejamento e rastreabilidade.
+* **Azure Repos** para versionamento Git.
+* **Azure Pipelines** para integração contínua e entrega contínua.
+* **Azure CLI** para provisionamento da infraestrutura em nuvem.
+* **Docker** para containerização da API.
+* **Azure Container Registry — ACR** para armazenamento da imagem Docker.
+* **Azure Container Instance — ACI** para execução da API em nuvem.
+* **Testes automatizados** com publicação dos resultados na pipeline.
+* **Artefatos de build** publicados no Azure Pipelines.
+* **CRUD em JSON** validado em ambiente de nuvem.
 
 ---
 
@@ -45,18 +45,28 @@ O foco principal desta entrega é demonstrar um fluxo DevOps completo com:
 
 ## 3. Objetivo da Entrega DevOps
 
-O objetivo da entrega é implementar em nuvem uma solução .NET utilizando o ecossistema do **Azure DevOps**, contemplando:
+O objetivo desta entrega é implementar em nuvem uma solução .NET utilizando o ecossistema do **Azure DevOps**, contemplando planejamento, versionamento, build, testes, artefatos, deploy automatizado e infraestrutura provisionada via script.
 
-1. Criação de projeto privado no Azure DevOps.
-2. Importação do código fonte para o Azure Repos.
-3. Criação de tarefas no Azure Boards.
-4. Vinculação de branch, commits e Pull Request às tarefas.
-5. Proteção da branch principal `main`.
-6. Criação de pipeline de Build com testes e artefatos.
-7. Criação de fluxo de Release/Deploy automático.
-8. Provisionamento da infraestrutura por script Azure CLI.
-9. Deploy da API em nuvem utilizando container.
-10. Demonstração de operações CRUD em pelo menos duas tabelas.
+### Requisitos atendidos
+
+| Requisito                       | Implementação                                     |
+| ------------------------------- | ------------------------------------------------- |
+| Projeto privado no Azure DevOps | Projeto criado no Azure DevOps                    |
+| Código no Azure Repos           | Repositório Git importado para Azure Repos        |
+| Azure Boards                    | Tasks criadas para organização da entrega         |
+| Vinculação de Boards com Repos  | Tasks vinculadas a branch, commits e Pull Request |
+| Branch principal protegida      | Políticas aplicadas na branch `main`              |
+| Revisor obrigatório             | Política de PR configurada                        |
+| Work Item obrigatório           | Pull Request vinculado aos Work Items             |
+| Build automático                | Pipeline acionada na branch `main`                |
+| Testes automatizados            | Execução de testes xUnit na pipeline              |
+| Artefatos publicados            | Publicação de artefato no estágio de Build        |
+| Release/deploy automático       | Deploy em Azure Container Instance                |
+| Infraestrutura via Azure CLI    | Script em `/scripts/script-infra-create.sh`       |
+| Dockerfile                      | Arquivo em `/dockerfiles/Dockerfile`              |
+| Script de banco                 | Arquivo `/scripts/script-bd.sql`                  |
+| Pipeline YAML                   | Arquivo `azure-pipeline.yml` na raiz              |
+| Dados sensíveis protegidos      | Uso de variáveis de ambiente e Service Connection |
 
 ---
 
@@ -85,7 +95,7 @@ O objetivo da entrega é implementar em nuvem uma solução .NET utilizando o ec
 
 ## 5. Arquitetura da Aplicação C#/.NET
 
-A aplicação segue uma organização em camadas, baseada em princípios de separação de responsabilidades. Essa estrutura facilita manutenção, testes, evolução da API e integração com banco de dados e serviços externos.
+A aplicação foi organizada em camadas, separando responsabilidades entre API, aplicação, domínio, infraestrutura e testes.
 
 ```mermaid
 flowchart TD
@@ -109,19 +119,19 @@ flowchart TD
 
 ### Projetos da Solution
 
-| Projeto                           | Responsabilidade                                                                       |
-| --------------------------------- | -------------------------------------------------------------------------------------- |
-| `Argus.Operations.API`            | Camada de entrada da aplicação, controllers, autenticação, Swagger e configuração HTTP |
-| `Argus.Operations.Application`    | Regras de aplicação, contratos, interfaces e DTOs                                      |
-| `Argus.Operations.Domain`         | Entidades, enums e regras de domínio                                                   |
-| `Argus.Operations.Infrastructure` | Persistência, Entity Framework, serviços concretos e integrações                       |
-| `Argus.Operations.Tests`          | Testes automatizados da aplicação                                                      |
+| Projeto                           | Responsabilidade                                                    |
+| --------------------------------- | ------------------------------------------------------------------- |
+| `Argus.Operations.API`            | Controllers, autenticação, Swagger, middlewares e configuração HTTP |
+| `Argus.Operations.Application`    | Regras de aplicação, contratos, interfaces e DTOs                   |
+| `Argus.Operations.Domain`         | Entidades, enums e regras de domínio                                |
+| `Argus.Operations.Infrastructure` | Persistência, Entity Framework, serviços concretos e integrações    |
+| `Argus.Operations.Tests`          | Testes automatizados com xUnit                                      |
 
 ---
 
 ## 6. Arquitetura DevOps em Nuvem
 
-A arquitetura DevOps utiliza o Azure DevOps para controlar o ciclo de vida da aplicação e o Azure Cloud para executar a API publicada em container.
+A arquitetura DevOps utiliza Azure DevOps para controlar o ciclo de vida da aplicação e Azure Cloud para executar a API publicada em container.
 
 ```mermaid
 flowchart LR
@@ -480,24 +490,30 @@ Swagger local ou publicado:
 | POST   | `/api/alertas/{id}/criar-ocorrencia` | Cria ocorrência a partir de alerta |
 | GET    | `/api/focos`                         | Lista focos de calor               |
 
-### Recursos principais
+### Brigadas
 
-Os recursos seguem o padrão REST:
+| Método | Endpoint             | Descrição                      |
+| ------ | -------------------- | ------------------------------ |
+| GET    | `/api/brigadas`      | Lista todas as brigadas        |
+| GET    | `/api/brigadas/{id}` | Busca uma brigada por ID       |
+| POST   | `/api/brigadas`      | Cria uma nova brigada          |
+| PUT    | `/api/brigadas/{id}` | Atualiza uma brigada existente |
+| DELETE | `/api/brigadas/{id}` | Remove uma brigada             |
 
-| Método | Padrão                | Descrição             |
-| ------ | --------------------- | --------------------- |
-| GET    | `/api/{recurso}`      | Lista registros       |
-| GET    | `/api/{recurso}/{id}` | Busca registro por ID |
-| POST   | `/api/{recurso}`      | Cria novo registro    |
-| PUT    | `/api/{recurso}/{id}` | Atualiza registro     |
-| DELETE | `/api/{recurso}/{id}` | Remove registro       |
+### Recursos
 
-Recursos principais da API:
+| Método | Endpoint             | Descrição                     |
+| ------ | -------------------- | ----------------------------- |
+| GET    | `/api/recursos`      | Lista todos os recursos       |
+| GET    | `/api/recursos/{id}` | Busca um recurso por ID       |
+| POST   | `/api/recursos`      | Cria um novo recurso          |
+| PUT    | `/api/recursos/{id}` | Atualiza um recurso existente |
+| DELETE | `/api/recursos/{id}` | Remove um recurso             |
+
+### Outros recursos
 
 ```txt
-brigadas
 brigadistas
-recursos
 ocorrencias
 registroscampo
 usuarios
@@ -507,20 +523,24 @@ usuarios
 
 ## 18. Exemplos de CRUD em JSON
 
-Abaixo estão exemplos de payloads utilizados para validação da API. Os nomes dos campos podem ser ajustados conforme os DTOs finais exibidos no Swagger.
+Para a demonstração da entrega, foram selecionadas duas entidades principais:
+
+1. **Brigadas**
+2. **Recursos**
+
+Essas entidades permitem demonstrar operações completas de Create, Read, Update e Delete em JSON.
 
 ---
 
-### CRUD 1 — Brigadas
+### 18.1 CRUD — Brigadas
 
 #### Create — POST `/api/brigadas`
 
 ```json
 {
   "nome": "Brigada DevOps Azure",
-  "baseOperacional": "Base FIAP",
-  "cidade": "São Paulo",
-  "estado": "SP",
+  "baseOperacional": "Base FIAP Paulista",
+  "telefone": "11999990000",
   "ativa": true
 }
 ```
@@ -534,13 +554,14 @@ Authorization: Bearer {token}
 
 #### Update — PUT `/api/brigadas/{id}`
 
+No PUT, o `id` da URL precisa ser igual ao `id` enviado no corpo da requisição.
+
 ```json
 {
-  "id": 1,
+  "id": 10,
   "nome": "Brigada DevOps Azure Atualizada",
-  "baseOperacional": "Base FIAP Paulista",
-  "cidade": "São Paulo",
-  "estado": "SP",
+  "baseOperacional": "Base FIAP Cloud",
+  "telefone": "11888887777",
   "ativa": true
 }
 ```
@@ -548,7 +569,7 @@ Authorization: Bearer {token}
 #### Delete — DELETE `/api/brigadas/{id}`
 
 ```http
-DELETE /api/brigadas/1
+DELETE /api/brigadas/10
 Authorization: Bearer {token}
 ```
 
@@ -560,16 +581,31 @@ SELECT * FROM TB_BRIGADAS;
 
 ---
 
-### CRUD 2 — Recursos
+### 18.2 CRUD — Recursos
+
+A entidade `Recurso` possui relacionamento com `Brigada`, por meio do campo `brigadaId`.
+
+Por isso, para criar um recurso, primeiro é necessário possuir uma brigada cadastrada.
+
+#### Enum `TipoRecurso`
+
+| Valor | Tipo        |
+| ----: | ----------- |
+|     1 | Veiculo     |
+|     2 | Ferramenta  |
+|     3 | EPI         |
+|     4 | Comunicacao |
 
 #### Create — POST `/api/recursos`
 
+Exemplo usando `brigadaId = 10`:
+
 ```json
 {
-  "nome": "Drone de Monitoramento DevOps",
-  "tipo": "Drone",
-  "quantidade": 2,
-  "status": "Disponivel"
+  "nome": "Veiculo DevOps Azure",
+  "tipo": 1,
+  "disponivel": true,
+  "brigadaId": 10
 }
 ```
 
@@ -582,20 +618,22 @@ Authorization: Bearer {token}
 
 #### Update — PUT `/api/recursos/{id}`
 
+Exemplo usando `id = 5` e `brigadaId = 10`:
+
 ```json
 {
-  "id": 1,
-  "nome": "Drone de Monitoramento DevOps Atualizado",
-  "tipo": "Drone",
-  "quantidade": 3,
-  "status": "EmOperacao"
+  "id": 5,
+  "nome": "Veiculo DevOps Azure Atualizado",
+  "tipo": 1,
+  "disponivel": false,
+  "brigadaId": 10
 }
 ```
 
 #### Delete — DELETE `/api/recursos/{id}`
 
 ```http
-DELETE /api/recursos/1
+DELETE /api/recursos/5
 Authorization: Bearer {token}
 ```
 
@@ -607,7 +645,28 @@ SELECT * FROM TB_RECURSOS;
 
 ---
 
-## 19. Execução Local
+## 19. Ordem Recomendada para Teste de CRUD
+
+Para evitar erro de relacionamento entre `Brigada` e `Recurso`, a ordem recomendada é:
+
+1. Realizar login.
+2. Copiar o token JWT.
+3. Autorizar as requisições no Swagger ou Postman.
+4. Criar uma brigada.
+5. Executar `GET /api/brigadas`.
+6. Atualizar a brigada.
+7. Criar um recurso usando o `id` da brigada criada.
+8. Executar `GET /api/recursos`.
+9. Atualizar o recurso.
+10. Validar no banco com `SELECT * FROM TB_BRIGADAS;`.
+11. Validar no banco com `SELECT * FROM TB_RECURSOS;`.
+12. Deletar o recurso.
+13. Deletar a brigada.
+14. Validar novamente no banco com `SELECT`.
+
+---
+
+## 20. Execução Local
 
 ### Pré-requisitos
 
@@ -635,6 +694,12 @@ dotnet build Argus.Operations.sln
 dotnet test Argus.Operations.sln
 ```
 
+Resultado validado localmente:
+
+```txt
+Resumo do teste: total: 38; falhou: 0; bem-sucedido: 38; ignorado: 0
+```
+
 ### Executar API
 
 ```bash
@@ -643,7 +708,7 @@ dotnet run --project Argus.Operations.API
 
 ---
 
-## 20. Testes Automatizados
+## 21. Testes Automatizados
 
 Os testes ficam no projeto:
 
@@ -657,11 +722,18 @@ Execução local:
 dotnet test Argus.Operations.sln
 ```
 
+Na validação local, foram executados:
+
+```txt
+38 testes
+0 falhas
+```
+
 Na pipeline, os testes são executados automaticamente e os resultados são publicados no Azure Pipelines.
 
 ---
 
-## 21. Evidências que Devem Aparecer no Vídeo
+## 22. Evidências que Devem Aparecer no Vídeo
 
 Durante o vídeo demonstrativo, devem ser evidenciados:
 
@@ -685,7 +757,7 @@ Durante o vídeo demonstrativo, devem ser evidenciados:
 
 ---
 
-## 22. Links da Entrega
+## 23. Links da Entrega
 
 | Item                     | Link                          |
 | ------------------------ | ----------------------------- |
@@ -698,33 +770,36 @@ Durante o vídeo demonstrativo, devem ser evidenciados:
 
 ---
 
-## 23. Checklist da Entrega
+## 24. Checklist da Entrega
 
-| Item                                 | Status                      |
-| ------------------------------------ | --------------------------- |
-| Projeto privado no Azure DevOps      | Concluído                   |
-| Código no Azure Repos                | Concluído                   |
-| Azure Boards com tasks               | Concluído                   |
-| Branch de feature criada             | Concluído                   |
-| Pull Request criado                  | Concluído                   |
-| Work Items vinculados                | Concluído                   |
-| Branch main protegida                | Concluído                   |
-| Script Azure CLI em `/scripts`       | Concluído                   |
-| Script `script-bd.sql` em `/scripts` | Concluído                   |
-| Dockerfile em `/dockerfiles`         | Concluído                   |
-| `azure-pipeline.yml` na raiz         | Concluído                   |
-| Pipeline de Build                    | Pendente de execução final  |
-| Publicação de testes                 | Pendente de execução final  |
-| Publicação de artefato               | Pendente de execução final  |
-| Deploy automático em ACI             | Pendente de execução final  |
-| CRUD em duas tabelas                 | Pendente de validação final |
-| SELECT no banco                      | Pendente de validação final |
-| Vídeo YouTube                        | Pendente                    |
-| PDF final                            | Pendente                    |
+| Item                                 | Status                          |
+| ------------------------------------ | ------------------------------- |
+| Projeto privado no Azure DevOps      | Concluído                       |
+| Código no Azure Repos                | Concluído                       |
+| Azure Boards com tasks               | Concluído                       |
+| Branch de feature criada             | Concluído                       |
+| Pull Request criado                  | Concluído                       |
+| Work Items vinculados                | Concluído                       |
+| Branch main protegida                | Concluído                       |
+| Script Azure CLI em `/scripts`       | Concluído                       |
+| Script `script-bd.sql` em `/scripts` | Concluído                       |
+| Dockerfile em `/dockerfiles`         | Concluído                       |
+| `azure-pipeline.yml` na raiz         | Concluído                       |
+| Restore local                        | Concluído                       |
+| Build local                          | Concluído                       |
+| Testes locais                        | Concluído — 38 testes aprovados |
+| Pipeline de Build                    | Pendente de execução final      |
+| Publicação de testes                 | Pendente de execução final      |
+| Publicação de artefato               | Pendente de execução final      |
+| Deploy automático em ACI             | Pendente de execução final      |
+| CRUD em duas tabelas                 | Pendente de validação final     |
+| SELECT no banco                      | Pendente de validação final     |
+| Vídeo YouTube                        | Pendente                        |
+| PDF final                            | Pendente                        |
 
 ---
 
-## 24. Conclusão
+## 25. Conclusão
 
 Este projeto demonstra a aplicação prática de **DevOps Tools & Cloud Computing** em uma solução real desenvolvida em **C#/.NET**.
 

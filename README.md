@@ -84,6 +84,8 @@ graph TD
 
 Os contratos de autenticação ficam na Application (`ITokenService`, `IPasswordHasher`); a implementação concreta (`TokenService`, `BcryptPasswordHasher`) está na Infrastructure. O AuthController depende das interfaces, não da implementação — substituir BCrypt por Argon2 amanhã exigiria uma classe nova na Infrastructure e zero linha alterada no controller.
 
+Essa estrutura aplica os princípios **SOLID** na prática: **inversão de dependência** (controllers dependem de abstrações em Application, resolvidas via injeção de dependência no `Program.cs`), **segregação de interfaces** (contratos pequenos e focados como `ITokenService` e `IPasswordHasher` em vez de uma interface monolítica) e **responsabilidade única** (cada camada tem um motivo para mudar — apresentação, contratos, infraestrutura e domínio são isolados).
+
 ## Modelo de domínio
 
 ```mermaid
@@ -562,7 +564,7 @@ Exemplo de resposta para um `DELETE /api/brigadas/1` quando há brigadistas vinc
 
 ## Health check
 
-`GET /health` é público (sem auth) e retorna um JSON com o status geral e o resultado do check do banco. Útil para load balancers, ferramentas de monitoring e para confirmar rapidamente se a API e a conexão Oracle estão de pé.
+`GET /health` é público (sem auth) e retorna um JSON com o status geral e o resultado de dois checks: `self` (liveness da própria aplicação) e `oracle-db` (conectividade com o banco). Útil para load balancers, ferramentas de monitoring e para confirmar rapidamente se a API e a conexão Oracle estão de pé.
 
 ```bash
 curl -s http://localhost:5215/health | jq
@@ -575,6 +577,7 @@ Resposta típica:
   "status": "Healthy",
   "totalDurationMs": 28.4,
   "checks": [
+    { "name": "self", "status": "Healthy", "durationMs": 0.0, "error": null },
     { "name": "oracle-db", "status": "Healthy", "durationMs": 28.1, "error": null }
   ]
 }
@@ -861,7 +864,7 @@ As duas primeiras provam comportamentos que só aparecem em runtime (não dá pr
 | ⭐ Autorização granular por brigada — brigadista de outra brigada recebe `403` ao tentar escrever registro | ![Autorização granular 403](docs/autorizacao-granular-403.png) |
 | ⭐ Mensageria — ocorrência criada pelo consumer a partir de alerta da fila (IDs 22, 25, 26 com `ID_ALERTA` preenchido) | ![Ocorrência criada via fila no banco](docs/mensageria-ocorrencia-no-banco.png) |
 | Swagger UI autenticado (botão **Authorize** com Bearer JWT ativo) | ![Swagger UI autorizado](docs/swagger-ui-autorizado.png) |
-| Health check do Oracle FIAP respondendo `Healthy` | ![Health check Oracle](docs/health-check-oracle.png) |
+| Health check respondendo `Healthy` — checks `self` (aplicação) + `oracle-db` (banco FIAP) | ![Health check](docs/health-checks.png) |
 | Deploy no Azure App Service (Linux B1, South Africa North) | ![Deploy Azure App Service](docs/deploy-azure-app-service.png) |
 | Suíte xUnit — 38 testes verdes | ![38 testes verdes](docs/dotnet-test-38-verdes.png) |
 

@@ -13,7 +13,7 @@
   <img alt="JWT" src="https://img.shields.io/badge/JWT-Bearer-000000?style=for-the-badge&logo=jsonwebtokens&logoColor=white">
   <img alt="Swagger" src="https://img.shields.io/badge/Swagger-OpenAPI-85EA2D?style=for-the-badge&logo=swagger&logoColor=black">
   <img alt="Serilog" src="https://img.shields.io/badge/Serilog-Structured%20Logs-1C1C1C?style=for-the-badge">
-  <img alt="xUnit" src="https://img.shields.io/badge/xUnit-38%2F38%20%E2%9C%93-5C2D91?style=for-the-badge">
+  <img alt="xUnit" src="https://img.shields.io/badge/xUnit-44%2F44%20%E2%9C%93-5C2D91?style=for-the-badge">
   <img alt="Azure" src="https://img.shields.io/badge/Azure-App%20Service-0078D4?style=for-the-badge&logo=microsoftazure&logoColor=white">
 </p>
 
@@ -743,7 +743,7 @@ O projeto `Argus.Operations.Tests` reúne testes unitários e integração-leve 
 dotnet test
 ```
 
-Cobertura atual (38 testes verdes em torno de 1 segundo):
+Cobertura atual (44 testes verdes em torno de 1 segundo):
 
 - **`BcryptPasswordHasherTests`**: garante que `Hash` produz valores não vazios e diferentes a cada chamada (salt aleatório do BCrypt), e que `Verify` aceita a senha correta e rejeita a errada.
 - **`TokenServiceTests`**: valida o formato do JWT gerado (header.payload.signature), a presença das claims básicas (`sub`, `email`, `name`), o claim de role correspondente ao `PerfilUsuario`, e a unicidade do `jti` em chamadas consecutivas (prevenção de replay).
@@ -751,6 +751,7 @@ Cobertura atual (38 testes verdes em torno de 1 segundo):
 - **`AlertasControllerTests`**: cobre o proxy `/api/alertas` (listagem e busca por id) e o endpoint `/api/alertas/{id}/criar-ocorrencia` que promove um alerta do Java a uma ocorrência operacional — testando caminho feliz, alerta inexistente no Java (404), brigada inexistente (400 com mensagem específica), brigadista inexistente (400) e herança automática da descrição quando não fornecida.
 - **`FocosControllerTests`**: valida o proxy `/api/focos` (mapa de calor), tanto com dados quanto com resposta vazia do Java.
 - **`RegistrosCampoControllerTests`**: cobre a autorização granular por brigada nos endpoints de escrita (Create/Update/Delete). 12 casos: caminho feliz pra brigadista na mesma brigada (201/204), bloqueio (`Forbid`) pra brigadista tentando escrever em ocorrência de outra brigada, bloqueio pra brigadista sem vínculo operacional, passe-livre pra Admin e Coordenador em qualquer brigada, `NotFound` quando ocorrência referenciada não existe, e **caso de anti-bypass** (brigadista tentando trocar `OcorrenciaId` no body do PUT pra forjar acesso — regra valida contra o registro ORIGINAL no banco).
+- **`OcorrenciasControllerStatusTests`**: cobre a mesma regra granular por brigada no endpoint `PATCH /api/ocorrencias/{id}/status`. 6 casos: brigadista avança o status da própria brigada (204 + persistência), bloqueio (`Forbid`) em ocorrência de outra brigada, passe-livre pra Admin, carimbo automático de `DataFinalizacao` ao finalizar, bloqueio pra brigadista sem vínculo, e `NotFound` em ocorrência inexistente.
 
 A camada de integração com Java usa **fakes manuais** (sem Moq) que implementam `IAlertaJavaClient` e `IFocoCalorJavaClient` — segue o padrão "sem mocks externos" já estabelecido no resto da suíte. A escolha de cobrir profundamente autenticação + integração é deliberada: o CRUD dos demais controllers é predominantemente código que delega ao EF Core, e seu comportamento é mais bem demonstrado via Swagger do que via testes que essencialmente testariam o próprio framework.
 
@@ -794,10 +795,10 @@ argus-operations/
 │   │                                      # Ocorrencia, RegistroCampo, Usuario
 │   └── Enum/                              # PerfilUsuario, TipoRecurso, StatusOcorrencia
 │
-├── Argus.Operations.Tests/                # xUnit (38 testes)
+├── Argus.Operations.Tests/                # xUnit (44 testes)
 │   ├── Auth/                              # BcryptPasswordHasherTests, TokenServiceTests
-│   ├── Controllers/                       # AuthControllerTests, AlertasControllerTests,
-│   │                                      # FocosControllerTests, RegistrosCampoControllerTests
+│   ├── Controllers/                       # AuthControllerTests, AlertasControllerTests, FocosControllerTests,
+│   │                                      # RegistrosCampoControllerTests, OcorrenciasControllerStatusTests
 │   └── Integration/                       # Fakes: FakeAlertaJavaClient, FakeFocoCalorJavaClient
 │
 ├── argus-tabelas-dotnet.sql               # DDL consolidado (alternativa às migrations)
@@ -885,9 +886,9 @@ As duas primeiras provam comportamentos que só aparecem em runtime (não dá pr
 | Swagger UI autenticado (botão **Authorize** com Bearer JWT ativo) | ![Swagger UI autorizado](docs/swagger-ui-autorizado.png) |
 | Health check respondendo `Healthy` — checks `self` (aplicação) + `oracle-db` (banco FIAP) | ![Health check](docs/health-checks.png) |
 | Deploy no Azure App Service (Linux B1, South Africa North) | ![Deploy Azure App Service](docs/deploy-azure-app-service.png) |
-| Suíte xUnit — 38 testes verdes | ![38 testes verdes](docs/dotnet-test-38-verdes.png) |
+| Suíte xUnit — todos os testes verdes | ![Suíte xUnit verde](docs/dotnet-test-38-verdes.png) |
 
-**Suíte local:** rodar `dotnet test` reproduz os 38 testes em xUnit cobrindo `AuthController`, `AlertasController`, `FocosController`, `RegistrosCampoController` (incluindo autorização granular por brigada e teste de bypass), `PasswordHasher` e `TokenService`.
+**Suíte local:** rodar `dotnet test` reproduz os 44 testes em xUnit cobrindo `AuthController`, `AlertasController`, `FocosController`, `RegistrosCampoController` e `OcorrenciasController` (incluindo autorização granular por brigada e teste de bypass), `PasswordHasher` e `TokenService`.
 
 ## Integrantes
 

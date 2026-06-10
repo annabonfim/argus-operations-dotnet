@@ -23,6 +23,7 @@ variables:
   dnsLabel: 'argus-rm561052-api'
   containerPort: '8080'
   azureSubscription: 'Azure for Students'
+  rabbitMqQueueName: 'argus.alertas'
 
 stages:
 - stage: Build
@@ -117,6 +118,9 @@ stages:
             --name $(aciName) \
             --yes || true
 
+          echo "Waiting before recreating Azure Container Instance..."
+          sleep 20
+
           echo "Creating Azure Container Instance with latest API image..."
           az container create \
             --resource-group $(resourceGroupName) \
@@ -133,11 +137,19 @@ stages:
             --dns-name-label $(dnsLabel) \
             --environment-variables \
               ASPNETCORE_ENVIRONMENT=Production \
-              ASPNETCORE_URLS=http://+:8080
+              ASPNETCORE_URLS=http://+:8080 \
+              ConnectionStrings__OracleDb="$(ConnectionStrings__OracleDb)" \
+              RabbitMq__ConnectionString="$(RabbitMq__ConnectionString)" \
+              RabbitMq__QueueName="$(rabbitMqQueueName)"
 
           echo "Deploy completed."
           az container show \
             --resource-group $(resourceGroupName) \
             --name $(aciName) \
-            --query "{name:name, provisioningState:provisioningState, fqdn:ipAddress.fqdn}" \
+            --query "{name:name, provisioningState:provisioningState, state:containers[0].instanceView.currentState.state, fqdn:ipAddress.fqdn}" \
             -o table
+
+          echo "Container logs:"
+          az container logs \
+            --resource-group $(resourceGroupName) \
+            --name $(aciName) || true
